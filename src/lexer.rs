@@ -1,6 +1,6 @@
 #[derive(Debug, Clone)]
 pub enum Token    {
-    Num(f64),
+    Num(f64),   // numbers are currently float only, maybe splitting into Num(u64) and Real(f64) later...
     Id(String),
     True(String),
     False(String),
@@ -22,15 +22,21 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
     let mut lineno = 1;
 
     while let Some(&c) = it.peek()  {
+
+        // skip if empty character
         if c == ' ' && c == '\t' {
             it.next();
             continue;   
         }
+
+        // skip and increase line number if newline
         if c == '\n'    {
             lineno += 1;
             it.next();
             continue;
         }
+
+        // logical and comparison operators
         match c {
             '&' =>  {
                 it.next();
@@ -107,6 +113,7 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
             _ => (),
         }
         
+        // digits
         if c.is_digit(10)    {
             let mut n = c.to_string().parse::<f64>().expect("Character not a digit.");
 
@@ -144,6 +151,7 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
             result.push(Token::Num(n));
         }
 
+        // lexemes
         if c.is_alphabetic()    {
             let mut s = String::new();
             s.push(c);
@@ -162,12 +170,14 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
             }
             result.push(Token::Id(s));
         }
+
+        // remaining characters
         if c != ' ' && c != '\t' && c != '\n'   {
             result.push(Token::Id(c.to_string()));
         }
         
         it.next();
     }
-    println!("{:?}", result);
+    //println!("{:?}", result);
     return Ok(result);
 }
