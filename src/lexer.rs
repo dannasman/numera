@@ -149,6 +149,7 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
                 }
             }
             result.push(Token::Num(n));
+            continue;
         }
 
         // lexemes
@@ -158,7 +159,6 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
 
             it.next();
             let mut ch = it.peek();
-
             while let Some(&i) = ch {
                 if !i.is_digit(10) && !i.is_alphabetic()  {
                     ch = None;
@@ -169,10 +169,11 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
                 }
             }
             result.push(Token::Id(s));
+            continue;
         }
 
-        // remaining characters
-        if c != ' ' && c != '\t' && c != '\n'   {
+        // remaining characters (really ugly atm)
+        if c != ' ' && c != '\t' && c != '\n' && !c.is_alphabetic() && !c.is_digit(10)    {
             result.push(Token::Id(c.to_string()));
         }
         
@@ -180,4 +181,32 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
     }
     //println!("{:?}", result);
     return Ok(result);
+}
+
+#[cfg(test)]
+mod tests    {
+    use super::*;
+
+    #[test]
+    fn correct_amount_of_tokens()   {
+        let input = String::from("1 _ != && =ok 3.4 1.0=_");
+        let result = lex(&input);
+        match result    {
+            Ok(r) => assert_eq!(10, r.len()),
+            Err(_) => println!("Error getting the return value."),
+        }
+    }
+
+    #[test]
+    fn correct_token_types()    {
+        let input = String::from("1 _ != && =ok 3.4 1.0=_");
+        let result = lex(&input);
+        match result    {
+            Ok(r) =>    {
+                let output = format!("{:?}", r);
+                assert_eq!(r#"[Num(1.0), Id("_"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_")]"#, output)
+            },
+            Err(_) => println!("Error getting the return value."),
+        }
+    }
 }
