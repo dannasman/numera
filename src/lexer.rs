@@ -10,6 +10,8 @@ pub enum Token    {
     Ne(String),
     Le(String),
     Ge(String),
+    Lt(String),
+    Gt(String),
 }
 
 pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
@@ -17,7 +19,94 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
 
     let mut it = input.chars().peekable();
 
+    let mut lineno = 1;
+
     while let Some(&c) = it.peek()  {
+        if c == ' ' && c == '\t' {
+            it.next();
+            continue;   
+        }
+        if c == '\n'    {
+            lineno += 1;
+            it.next();
+            continue;
+        }
+        match c {
+            '&' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('&') = ch   {
+                    result.push(Token::And("&&".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Id("&".to_string()));
+                    continue;
+                };
+            },
+            '|' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('|') = ch   {
+                    result.push(Token::Or("||".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Id("|".to_string()));
+                    continue;
+                };
+            },
+            '=' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('=') = ch   {
+                    result.push(Token::Eql("==".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Id("=".to_string()));
+                    continue;
+                };
+            },
+            '!' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('=') = ch   {
+                    result.push(Token::Ne("!=".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Id("!".to_string()));
+                    continue;
+                };
+            },
+            '<' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('=') = ch   {
+                    result.push(Token::Le("<=".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Lt("<".to_string()));
+                    continue;
+                };
+            },
+            '>' =>  {
+                it.next();
+                let ch = it.peek();
+                if let Some('=') = ch   {
+                    result.push(Token::Ge(">=".to_string()));
+                    it.next();
+                    continue;
+                } else  {
+                    result.push(Token::Gt(">".to_string()));
+                    continue;
+                };
+            },
+            _ => (),
+        }
+        
         if c.is_digit(10)    {
             let mut n = c.to_string().parse::<f64>().expect("Character not a digit.");
 
@@ -73,9 +162,12 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
             }
             result.push(Token::Id(s));
         }
+        if c != ' ' && c != '\t' && c != '\n'   {
+            result.push(Token::Id(c.to_string()));
+        }
         
         it.next();
     }
-
+    println!("{:?}", result);
     return Ok(result);
 }
