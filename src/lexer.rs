@@ -1,9 +1,14 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub enum Token    {
     Num(f64),   // numbers are currently float only, maybe splitting into Num(u64) and Real(f64) later...
     Id(String),
     True(String),
     False(String),
+    If(String),
+    Else(String),
+    While(String),
     And(String),
     Or(String),
     Eql(String),
@@ -16,6 +21,14 @@ pub enum Token    {
 
 pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
     let mut result = Vec::new();
+
+    let mut words = HashMap::from([
+                                  ("true".to_string(),  Token::True("true".to_string())),
+                                  ("false".to_string(), Token::False("false".to_string())),
+                                  ("if".to_string(),    Token::If("if".to_string())),
+                                  ("else".to_string(),  Token::Else("else".to_string())),
+                                  ("while".to_string(), Token::While("while".to_string())),
+    ]);
 
     let mut it = input.chars().peekable();
 
@@ -168,7 +181,15 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
                     ch = it.peek();
                 }
             }
-            result.push(Token::Id(s));
+            println!("{}", s);
+            match words.get(&s)  {
+                Some(t) => result.push(Token::clone(t)),
+                None => {
+                    result.push(Token::Id(s.clone()));
+                    words.insert(s.clone(), Token::Id(s.clone()));
+                },
+            }
+
             continue;
         }
 
@@ -199,12 +220,12 @@ mod tests    {
 
     #[test]
     fn correct_token_types()    {
-        let input = String::from("1 _ != && =ok 3.4 1.0=_");
+        let input = String::from("1 _ while != && =ok 3.4 1.0=_ true false if else true1");
         let result = lex(&input);
         match result    {
             Ok(r) =>    {
                 let output = format!("{:?}", r);
-                assert_eq!(r#"[Num(1.0), Id("_"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_")]"#, output)
+                assert_eq!(r#"[Num(1.0), Id("_"), While("while"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#, output)
             },
             Err(_) => println!("Error getting the return value."),
         }
