@@ -19,6 +19,168 @@ pub enum Token    {
     Gt(String),
 }
 
+pub struct Lexer    {
+    pub tokens: Vec<Token>,
+    pub words: HashMap<String, Token>,
+}
+
+impl Lexer  {
+    pub fn new() -> Lexer    {
+        return Lexer    {
+            tokens: Vec::new(),
+            words:  HashMap::from([
+                                  ("true".to_string(),  Token::True("true".to_string())),
+                                  ("false".to_string(), Token::False("false".to_string())),
+                                  ("if".to_string(),    Token::If("if".to_string())),
+                                  ("else".to_string(),  Token::Else("else".to_string())),
+                                  ("while".to_string(), Token::While("while".to_string())),
+            ])
+        };
+    }
+    pub fn lex(&mut self, input: &String)  {
+        let mut it = input.chars().peekable();
+
+        let mut _lineno = 1;
+
+        while let Some(&c) = it.peek()  {
+
+            match c {
+                ' ' | '\t' => {
+                    it.next();
+                },
+                '\n'  =>  {
+                    _lineno += 1;
+                    it.next();
+                },
+                '&' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('&') = ch   {
+                        self.tokens.push(Token::And("&&".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Id("&".to_string()));
+                    };
+                },
+                '|' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('|') = ch   {
+                        self.tokens.push(Token::Or("||".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Id("|".to_string()));
+                    };
+                },
+                '=' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('=') = ch   {
+                        self.tokens.push(Token::Eql("==".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Id("=".to_string()));
+                    };
+                },
+                '!' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('=') = ch   {
+                        self.tokens.push(Token::Ne("!=".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Id("!".to_string()));
+                    };
+                },
+                '<' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('=') = ch   {
+                        self.tokens.push(Token::Le("<=".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Lt("<".to_string()));
+                    };
+                },
+                '>' =>  {
+                    it.next();
+                    let ch = it.peek();
+                    if let Some('=') = ch   {
+                        self.tokens.push(Token::Ge(">=".to_string()));
+                        it.next();
+                    } else  {
+                        self.tokens.push(Token::Gt(">".to_string()));
+                    };
+                },
+                '0'..='9' =>    {
+                    let mut n = c.to_string().parse::<f64>().expect("Character not a digit.");
+
+                    it.next();
+                    let mut digitch = it.peek();
+
+                    while let Some(&i) = digitch {
+                        if !i.is_digit(10)   {
+                            if i == '.'    {
+                                let mut d = 10.0;
+                                it.next();
+                                digitch = it.peek();
+
+                                while let Some(&j) = digitch    {
+                                    if !j.is_digit(10) {
+                                        digitch = None;
+                                    } else  {
+                                        let f = j.to_string().parse::<f64>().expect("Character not a digit.");
+                                        n = n + f / d;
+                                        d = d * 10.0;
+                                        it.next();
+                                        digitch = it.peek();
+                                    }
+                                }
+                            } else  {
+                                digitch = None;
+                            }
+                        } else  {
+                            let digit = i.to_string().parse::<f64>().expect("Character not a digit.");
+                            n = n*10.0 + digit;
+                            it.next();
+                            digitch = it.peek();
+                        }
+                    }
+                    self.tokens.push(Token::Num(n));
+                }
+                'A'..='Z' | 'a'..='z' => {
+                    let mut s = String::new();
+                    s.push(c);
+
+                    it.next();
+                    let mut ch = it.peek();
+                    while let Some(&i) = ch {
+                        if !i.is_digit(10) && !i.is_alphabetic()  {
+                            ch = None;
+                        } else  {
+                            s.push(i);
+                            it.next();
+                            ch = it.peek();
+                        }
+                    }
+                    println!("{}", s);
+                    match self.words.get(&s)  {
+                        Some(t) => self.tokens.push(Token::clone(t)),
+                        None => {
+                            self.tokens.push(Token::Id(s.clone()));
+                            self.words.insert(s.clone(), Token::Id(s.clone()));
+                        },
+                    }
+                },
+                _ => {
+                    self.tokens.push(Token::Id(c.to_string()));
+                    it.next();
+                },
+            }
+        }
+    }
+}
+
 pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
     let mut result = Vec::new();
 
@@ -37,7 +199,6 @@ pub fn lex(input: &String) -> Result<Vec<Token>, String>   {
 
     while let Some(&c) = it.peek()  {
 
-        // logical and comparison operators
         match c {
             ' ' | '\t' => {
                 it.next();
@@ -183,23 +344,17 @@ mod tests    {
     #[test]
     fn correct_amount_of_tokens()   {
         let input = String::from("1 _ != && =ok 3.4 1.0=_");
-        let result = lex(&input);
-        match result    {
-            Ok(r) => assert_eq!(10, r.len()),
-            Err(_) => println!("Error getting the return value."),
-        }
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        assert_eq!(10, lexer.tokens.len())
     }
 
     #[test]
     fn correct_token_types()    {
         let input = String::from("1 _ while != && =ok 3.4 1.0=_ true false if else true1");
-        let result = lex(&input);
-        match result    {
-            Ok(r) =>    {
-                let output = format!("{:?}", r);
-                assert_eq!(r#"[Num(1.0), Id("_"), While("while"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#, output)
-            },
-            Err(_) => println!("Error getting the return value."),
-        }
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        let output = format!("{:?}", lexer.tokens);
+        assert_eq!(r#"[Num(1.0), Id("_"), While("while"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#, output)
     }
 }
