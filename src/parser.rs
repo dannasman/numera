@@ -261,7 +261,9 @@ impl Parser {
     fn expr(&mut self) {
         //self.term();
         let mut t = self.lexer.tokens.pop_back();
-        while Self::match_option_token(t.clone(), "+".to_string()) || Self::match_option_token(t.clone(), "-".to_string())  {
+        while Self::match_option_token(t.clone(), "+".to_string())
+            || Self::match_option_token(t.clone(), "-".to_string())
+        {
             //luo uusi Arith-instanssi ja kutsu self.term()
             t = self.lexer.tokens.pop_back();
         }
@@ -271,7 +273,9 @@ impl Parser {
     fn term(&mut self) {
         //self.unary();
         let mut t = self.lexer.tokens.pop_back();
-        while Self::match_option_token(t.clone(), "*".to_string()) || Self::match_option_token(t.clone(), "/".to_string())  {
+        while Self::match_option_token(t.clone(), "*".to_string())
+            || Self::match_option_token(t.clone(), "/".to_string())
+        {
             //luo uusi Arith-instanssi ja kutsu unary
             t = self.lexer.tokens.pop_back();
         }
@@ -285,19 +289,71 @@ impl Parser {
                 if Self::match_token(t.clone(), "-".to_string()) {
                     self.lexer.tokens.pop_back();
                     //luo uusi Unary-instanssi ja kutsu unary
-                }
-                else if Self::match_token(t.clone(), "!".to_string()) {
+                } else if Self::match_token(t.clone(), "!".to_string()) {
                     self.lexer.tokens.pop_back();
                     //luo uusi Not-instanssi ja kutsu unary
-                }
-                else {
+                } else {
                     //kutsu factor
                 }
-            },
+            }
             None => {
                 return;
             }
         }
         return;
+    }
+
+    fn factor(&mut self) {
+        let peek = self.lexer.tokens.back();
+        match peek {
+            Some(t) => {
+                match t.clone() {
+                    Token::Num(_) => {
+                        //uusi Constant-instanssi
+                        self.lexer.tokens.pop_back();
+                    }
+                    Token::True(_) => {
+                        //true Constant-instanssi
+                        self.lexer.tokens.pop_back();
+                    }
+                    Token::False(_) => {
+                        //false Constant-instanssi
+                        self.lexer.tokens.pop_back();
+                    }
+                    Token::Id(s) => {
+                        self.lexer.tokens.pop_back();
+                        if s == "(".to_string() {
+                            //self.bool
+                            let next = self.lexer.tokens.pop_back();
+                            if !Self::match_option_token(next, ")".to_string()) {
+                                println!("token did not match )");
+                            }
+                        } else {
+                            let id = self.symbol_table.get(&s.to_string());
+                            match id {
+                                Some(symbol) => {
+                                    if symbol.scope > self.current_scope {
+                                        println!("{} out of scope", s.to_string());
+                                        return;
+                                    }
+                                    //palauta id
+                                    return;
+                                }
+                                None => {
+                                    println!("{} undeclared", s.to_string());
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        return;
+                    }
+                }
+            }
+            None => {
+                return;
+            }
+        }
     }
 }
