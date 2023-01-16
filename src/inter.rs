@@ -2,11 +2,6 @@ use super::lexer::{Lexer, Token};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-//TODO:
-//Expression-union jonka tyyppejä ovat Unary(Op), Arith(Op), Constant(Op),
-//Or(Logical), And(Logical), Not(Logical), Rel(Logical).
-//Statement-union jonka tyyppejä ovat If, Else, While, Set, Seq.
-
 pub trait ExprNode {
     fn emit_label(&self, i: u32) {
         println!("L{}:", i);
@@ -28,14 +23,15 @@ pub trait ExprNode {
     }
 
     //used by logical expressions
-    fn gen(&self, f: u32, a: u32, temp_number: u32) -> u32 {
+    fn gen(&self, f: u32, a: u32, temp_count: Rc<RefCell<u32>>) -> Temp {
+        let temp = Temp::new(temp_count);
         self.jumping(0, f);
-        self.emit(format!("t{} = true", temp_number));
+        self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
         self.emit_label(f);
-        self.emit(format!("t{} = false", temp_number));
+        self.emit(format!("{} = false", temp.to_string()));
         self.emit_label(a);
-        return temp_number;
+        return temp;
     }
 
     fn jumping(&self, t: u32, f: u32) {
@@ -58,8 +54,10 @@ pub trait StmtNode {
 }
 
 #[derive(Debug, Clone)]
-enum ExprUnion {
+pub enum ExprUnion {
+    Id(Box<Id>),
     Arith(Box<Arith>),
+    Temp(Box<Temp>),
     Unary(Box<Unary>),
     Constant(Box<Constant>),
     Or(Box<Or>),
@@ -71,7 +69,9 @@ enum ExprUnion {
 impl ExprUnion {
     fn match_expr(&self) -> String {
         match self {
+            ExprUnion::Id(id) => return id.to_string(),
             ExprUnion::Arith(arith) => return arith.to_string(),
+            ExprUnion::Temp(temp) => return temp.to_string(),
             ExprUnion::Unary(unary) => return unary.to_string(),
             ExprUnion::Constant(constant) => return constant.to_string(),
             ExprUnion::Or(or) => return or.to_string(),
@@ -84,7 +84,9 @@ impl ExprUnion {
 
     fn jumping(&self, t: u32, f: u32) {
         match self {
+            ExprUnion::Id(id) => id.jumping(t, f),
             ExprUnion::Arith(arith) => arith.jumping(t, f),
+            ExprUnion::Temp(temp) => temp.jumping(t, f),
             ExprUnion::Unary(unary) => unary.jumping(t, f),
             ExprUnion::Constant(constant) => constant.jumping(t, f),
             ExprUnion::Or(or) => or.jumping(t, f),
@@ -97,7 +99,7 @@ impl ExprUnion {
 }
 
 #[derive(Debug, Clone)]
-enum StmtUnion {
+pub enum StmtUnion {
     If(Box<If>),
     Else(Box<Else>),
     While(Box<While>),
@@ -130,17 +132,39 @@ impl StmtUnion {
 }
 
 #[derive(Debug, Clone)]
-struct Arith {
+pub struct Id {
+    id: Token,
+}
+
+impl Id {
+    pub fn new(id: Token) -> Self {
+        return Id { id };
+    }
+}
+
+impl ExprNode for Id {
+    fn to_string(&self) -> String {
+        return self.id.clone().value_to_string();
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Arith {
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
+}
+
+impl Arith {
+    pub fn new(op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+        return Arith { op, expr1, expr2 };
+    }
 }
 
 impl ExprNode for Arith {
     fn jumping(&self, t: u32, f: u32) {
         self.emit_jumps(self.to_string(), t, f);
     }
-    //TODO: muuta match-muotoon tai keksi parempi ratkaisu
     fn to_string(&self) -> String {
         let e1 = self.expr1.match_expr();
         let e2 = self.expr2.match_expr();
@@ -149,9 +173,35 @@ impl ExprNode for Arith {
 }
 
 #[derive(Debug, Clone)]
-struct Unary {
+pub struct Temp {
+    number: u32,
+}
+
+impl Temp {
+    pub fn new(count: Rc<RefCell<u32>>) -> Self {
+        let mut c = count.borrow_mut();
+        *c += 1;
+        let number = *c;
+        return Temp { number };
+    }
+}
+
+impl ExprNode for Temp {
+    fn to_string(&self) -> String {
+        return format!("t{}", self.number);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Unary {
     op: Token,
     expr: ExprUnion,
+}
+
+impl Unary {
+    pub fn new(op: Token, expr: ExprUnion) -> Self {
+        return Unary { op, expr };
+    }
 }
 
 impl ExprNode for Unary {
@@ -166,8 +216,14 @@ impl ExprNode for Unary {
 }
 
 #[derive(Debug, Clone)]
-struct Constant {
+pub struct Constant {
     constant: Token,
+}
+
+impl Constant {
+    pub fn new(constant: Token) -> Self {
+        return Constant { constant };
+    }
 }
 
 impl ExprNode for Constant {
@@ -193,11 +249,22 @@ impl ExprNode for Constant {
 }
 
 #[derive(Debug, Clone)]
-struct Or {
+pub struct Or {
     label: Rc<RefCell<u32>>,
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
+}
+
+impl Or {
+    pub fn new(label: Rc<RefCell<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+        return Or {
+            label,
+            op,
+            expr1,
+            expr2,
+        };
+    }
 }
 
 impl ExprNode for Or {
@@ -223,11 +290,22 @@ impl ExprNode for Or {
 }
 
 #[derive(Debug, Clone)]
-struct And {
+pub struct And {
     label: Rc<RefCell<u32>>,
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
+}
+
+impl And {
+    pub fn new(label: Rc<RefCell<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+        return And {
+            label,
+            op,
+            expr1,
+            expr2,
+        };
+    }
 }
 
 impl ExprNode for And {
@@ -253,9 +331,15 @@ impl ExprNode for And {
 }
 
 #[derive(Debug, Clone)]
-struct Not {
+pub struct Not {
     op: Token,
     expr: ExprUnion,
+}
+
+impl Not {
+    pub fn new(op: Token, expr: ExprUnion) -> Self {
+        return Not { op, expr };
+    }
 }
 
 impl ExprNode for Not {
@@ -270,10 +354,16 @@ impl ExprNode for Not {
 }
 
 #[derive(Debug, Clone)]
-struct Rel {
+pub struct Rel {
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
+}
+
+impl Rel {
+    pub fn new(op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+        return Rel { op, expr1, expr2 };
+    }
 }
 
 impl ExprNode for Rel {
