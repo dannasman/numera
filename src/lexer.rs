@@ -235,4 +235,16 @@ mod tests {
             output
         )
     }
+
+    #[test]
+    fn correct_block_handling() {
+        let input = String::from("{ 1 }");
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        let output = format!("{:?}", lexer.tokens);
+        assert_eq!(
+            r#"[Id("{"), Num(1.0), Id("}")]"#,
+            output
+        )
+    }
 }

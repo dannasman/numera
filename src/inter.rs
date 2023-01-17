@@ -118,7 +118,18 @@ impl StmtUnion {
             other => return 0,
         }
     }
-    fn gen(&self, b: u32, a: u32) {
+    pub fn emit_label(&self, i: u32) {
+        match self {
+            StmtUnion::If(if_stmt) => if_stmt.emit_label(i),
+            StmtUnion::Else(else_stmt) => else_stmt.emit_label(i),
+            StmtUnion::While(while_stmt) => while_stmt.emit_label(i),
+            StmtUnion::Set(set_stmt) => set_stmt.emit_label(i),
+            StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
+            StmtUnion::Break(break_stmt) => break_stmt.emit_label(i),
+            _ => (),
+        }
+    }
+    pub fn gen(&self, b: u32, a: u32) {
         match self {
             StmtUnion::If(if_stmt) => if_stmt.gen(b, a),
             StmtUnion::Else(else_stmt) => else_stmt.gen(b, a),
@@ -133,18 +144,18 @@ impl StmtUnion {
 
 #[derive(Debug, Clone)]
 pub struct Id {
-    id: Token,
+    token: Token,
 }
 
 impl Id {
-    pub fn new(id: Token) -> Self {
-        return Id { id };
+    pub fn new(token: Token) -> Self {
+        return Id { token };
     }
 }
 
 impl ExprNode for Id {
     fn to_string(&self) -> String {
-        return self.id.clone().value_to_string();
+        return self.token.clone().value_to_string();
     }
 }
 
@@ -382,10 +393,16 @@ impl ExprNode for Rel {
 }
 
 #[derive(Debug, Clone)]
-struct If {
+pub struct If {
     label: Rc<RefCell<u32>>,
     expr: ExprUnion,
     stmt: StmtUnion,
+}
+
+impl If {
+    pub fn new(label: Rc<RefCell<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
+        return If { label, expr, stmt };
+    }
 }
 
 impl StmtNode for If {
@@ -400,11 +417,27 @@ impl StmtNode for If {
 }
 
 #[derive(Debug, Clone)]
-struct Else {
+pub struct Else {
     label: Rc<RefCell<u32>>,
     expr: ExprUnion,
     stmt1: StmtUnion,
     stmt2: StmtUnion,
+}
+
+impl Else {
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        expr: ExprUnion,
+        stmt1: StmtUnion,
+        stmt2: StmtUnion,
+    ) -> Self {
+        return Else {
+            label,
+            expr,
+            stmt1,
+            stmt2,
+        };
+    }
 }
 
 impl StmtNode for Else {
@@ -426,46 +459,93 @@ impl StmtNode for Else {
 }
 
 #[derive(Debug, Clone)]
-struct While {
+pub struct While {
     label: Rc<RefCell<u32>>,
     after: RefCell<u32>,
-    expr: ExprUnion,
-    stmt: StmtUnion,
+    expr: Option<ExprUnion>,
+    stmt: Option<StmtUnion>,
+}
+
+impl While {
+    pub fn new(label: Rc<RefCell<u32>>, after: RefCell<u32>) -> Self {
+        return While {
+            label,
+            after,
+            expr: None,
+            stmt: None,
+        };
+    }
+    pub fn init(&mut self, expr: Option<ExprUnion>, stmt: Option<StmtUnion>) {
+        self.expr = expr;
+        self.stmt = stmt;
+    }
 }
 
 impl StmtNode for While {
     fn gen(&self, b: u32, a: u32) {
-        let mut after_borrow = self.after.borrow_mut();
-        *after_borrow = a;
-        self.expr.jumping(0, a);
+        match &self.expr {
+            Some(e) => match &self.stmt {
+                Some(s) => {
+                    let mut after_borrow = self.after.borrow_mut();
+                    *after_borrow = a;
+                    e.jumping(0, a);
 
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let new_label = *l;
-        self.emit_label(new_label);
-        self.stmt.gen(new_label, b);
-        self.emit(format!("goto L{}", b));
+                    let mut l = self.label.borrow_mut();
+                    *l += 1;
+                    let new_label = *l;
+                    self.emit_label(new_label);
+                    s.gen(new_label, b);
+                    self.emit(format!("goto L{}", b));
+                }
+                None => {
+                    println!("expression missing");
+                }
+            },
+            None => {
+                println!("expression missing");
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-struct Set {
-    id: Token,
+pub struct Set {
+    id: Id,
     expr: ExprUnion,
+}
+
+impl Set {
+    pub fn new(id: Id, expr: ExprUnion) -> Self {
+        return Set { id, expr };
+    }
 }
 
 impl StmtNode for Set {
     fn gen(&self, b: u32, a: u32) {
         let e = self.expr.match_expr();
-        self.emit(format!("{} = {}", self.id.clone().value_to_string(), e));
+        self.emit(format!("{} = {}", self.id.to_string(), e));
     }
 }
 
 #[derive(Debug, Clone)]
-struct Seq {
+pub struct Seq {
     label: Rc<RefCell<u32>>,
     stmt1: Option<StmtUnion>,
     stmt2: Option<StmtUnion>,
+}
+
+impl Seq {
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        stmt1: Option<StmtUnion>,
+        stmt2: Option<StmtUnion>,
+    ) -> Self {
+        return Seq {
+            label,
+            stmt1,
+            stmt2,
+        };
+    }
 }
 
 impl StmtNode for Seq {
@@ -493,13 +573,27 @@ impl StmtNode for Seq {
 }
 
 #[derive(Debug, Clone)]
-struct Break {
-    stmt: StmtUnion,
+pub struct Break {
+    stmt: Rc<RefCell<Option<StmtUnion>>>,
+}
+
+impl Break {
+    pub fn new(stmt: Rc<RefCell<Option<StmtUnion>>>) -> Self {
+        return Break { stmt };
+    }
 }
 
 impl StmtNode for Break {
     fn gen(&self, b: u32, a: u32) {
-        let after = self.stmt.after();
-        self.emit(format!("goto L{}", after));
+        let borrow_stmt = self.stmt.borrow_mut();
+        match &*borrow_stmt {
+            Some(bs) => {
+                let after = bs.after();
+                self.emit(format!("goto L{}", after));
+            }
+            None => {
+                println!("unenclosed break");
+            }
+        }
     }
 }
