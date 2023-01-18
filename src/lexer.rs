@@ -27,7 +27,7 @@ pub enum Token {
     Rcb(String),
     Lrb(String),
     Rrb(String),
-    Scol(String)
+    Scol(String),
 }
 
 impl Token {
@@ -58,7 +58,7 @@ impl Token {
             Token::Rcb(s) => s,
             Token::Lrb(s) => s,
             Token::Rrb(s) => s,
-            Token::Scol(s) => s
+            Token::Scol(s) => s,
         }
     }
 }
@@ -295,10 +295,13 @@ mod tests {
 
     #[test]
     fn correct_block_handling() {
-        let input = String::from("{(*/;)}");
+        let input = String::from("while {(*/;)}");
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
-        assert_eq!(r#"[Lcb("{"), Lrb("("), Mul("*"), Div("/"), Scol(";"), Rrb(")"), Rcb("}")]"#, output)
+        assert_eq!(
+            r#"[While("while"), Lcb("{"), Lrb("("), Mul("*"), Div("/"), Scol(";"), Rrb(")"), Rcb("}")]"#,
+            output
+        )
     }
 }

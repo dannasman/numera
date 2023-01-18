@@ -2,8 +2,8 @@ mod inter;
 mod lexer;
 mod parser;
 use std::env;
-use std::fs;
 use std::error::Error;
+use std::fs;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();

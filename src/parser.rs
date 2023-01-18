@@ -47,13 +47,6 @@ impl Parser {
         self.current_scope = self.current_scope - 1;
     }
 
-    fn match_token(t: Token, s: String) -> bool {
-        if t.value_to_string() == s {
-            return true;
-        }
-        return false;
-    }
-
     pub fn program(&mut self, input: &String) {
         self.lexer.lex(input);
         let stmt = self.block();
@@ -65,6 +58,7 @@ impl Parser {
                 *l += 1;
                 let after = *l;
                 drop(l);
+
                 s.emit_label(begin);
                 s.gen(begin, after);
                 s.emit_label(after);
@@ -81,8 +75,10 @@ impl Parser {
             return None;
         }
 
+        //save symbol table related to current scope
         let saved_symbol_table = self.symbol_table.clone();
         self.increment_scope();
+
         let stmt = self.stmts();
         t = self.lexer.tokens.pop_front();
         if let Some(Token::Rcb(_)) = t {
@@ -91,27 +87,24 @@ impl Parser {
             return None;
         }
 
-        self.decrement_scope();
+        //set saved symbol table
         self.symbol_table = saved_symbol_table;
+        self.decrement_scope();
         return stmt;
     }
 
     fn stmts(&mut self) -> Option<StmtUnion> {
         let t = self.lexer.tokens.front();
         match t {
-            Some(token) => {
-                match token {
-                    Token::Rcb(_) => {
-                        return None
-                    },
-                    _ => {
-                        let stmt1 = self.stmt();
-                        let stmt2 = self.stmts();
-                        let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
-                        return Some(seq);
-                    }
+            Some(token) => match token {
+                Token::Rcb(_) => return None,
+                _ => {
+                    let stmt1 = self.stmt();
+                    let stmt2 = self.stmts();
+                    let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
+                    return Some(seq);
                 }
-            }
+            },
             None => {
                 return None;
             }
@@ -126,7 +119,7 @@ impl Parser {
                     Token::Scol(_) => {
                         self.lexer.tokens.pop_front();
                         return None;
-                    },
+                    }
                     Token::Lcb(_) => {
                         let stmt = self.block();
                         return stmt;
@@ -156,18 +149,46 @@ impl Parser {
                             println!("token did not match (");
                             return None;
                         }
+
                         let expr = self.boolean();
+
                         next_t = self.lexer.tokens.pop_front();
                         if let Some(Token::Rrb(_)) = next_t {
                         } else {
                             println!("token did not match )");
                             return None;
                         }
+
                         let stmt1 = self.stmt();
+
                         let peek = self.lexer.tokens.front();
                         match peek {
                             Some(next) => {
-                                if !Self::match_token(next.clone(), "else".to_string()) {
+                                if let Token::Else(_) = next {
+                                    self.lexer.tokens.pop_front();
+                                    let stmt2 = self.stmt();
+                                    match stmt1 {
+                                        Some(s1) => match stmt2 {
+                                            Some(s2) => match expr {
+                                                Some(x) => {
+                                                    let else_stmt = StmtUnion::Else(Box::new(
+                                                        Else::new(Arc::clone(&self.label), x, s1, s2),
+                                                    ));
+                                                    return Some(else_stmt);
+                                                }
+                                                None => {
+                                                    return None;
+                                                }
+                                            },
+                                            None => {
+                                                return None;
+                                            }
+                                        },
+                                        None => {
+                                            return None;
+                                        }
+                                    }
+                                } else {
                                     match stmt1 {
                                         Some(s1) => match expr {
                                             Some(x) => {
@@ -183,29 +204,6 @@ impl Parser {
                                             }
                                         },
                                         None => return None,
-                                    }
-                                }
-                                self.lexer.tokens.pop_front();
-                                let stmt2 = self.stmt();
-                                match stmt1 {
-                                    Some(s1) => match stmt2 {
-                                        Some(s2) => match expr {
-                                            Some(x) => {
-                                                let else_stmt = StmtUnion::Else(Box::new(
-                                                    Else::new(Arc::clone(&self.label), x, s1, s2),
-                                                ));
-                                                return Some(else_stmt);
-                                            }
-                                            None => {
-                                                return None;
-                                            }
-                                        },
-                                        None => {
-                                            return None;
-                                        }
-                                    },
-                                    None => {
-                                        return None;
                                     }
                                 }
                             }
@@ -300,7 +298,7 @@ impl Parser {
                                             )));
                                             let next_t = self.lexer.tokens.pop_front();
                                             if let Some(Token::Scol(_)) = next_t {
-                                            } else{
+                                            } else {
                                                 println!("token did not match ;");
                                                 return None;
                                             }
@@ -521,9 +519,7 @@ impl Parser {
 
     fn expr(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.term();
-        if let Some(Token::Add(s)) | Some(Token::Sub(s)) =
-            self.lexer.tokens.front()
-        {
+        if let Some(Token::Add(s)) | Some(Token::Sub(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
             self.lexer.tokens.pop_front();
             match expr1 {
@@ -564,9 +560,7 @@ impl Parser {
 
     fn term(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.unary();
-        if let Some(Token::Mul(s)) | Some(Token::Div(s)) =
-            self.lexer.tokens.front()
-        {
+        if let Some(Token::Mul(s)) | Some(Token::Div(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
             self.lexer.tokens.pop_front();
             match expr1 {
@@ -614,10 +608,7 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Unary(Box::new(Unary::new(
-                                Token::Sub(s),
-                                x,
-                            )));
+                            let unary = ExprUnion::Unary(Box::new(Unary::new(Token::Sub(s), x)));
                             return Some(unary);
                         }
                         None => {
@@ -629,8 +620,7 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary =
-                                ExprUnion::Not(Box::new(Not::new(Token::Not(s), x)));
+                            let unary = ExprUnion::Not(Box::new(Not::new(Token::Not(s), x)));
                             return Some(unary);
                         }
                         None => {
@@ -666,19 +656,18 @@ impl Parser {
                     let constant = ExprUnion::Constant(Box::new(Constant::new(Token::False(s))));
                     self.lexer.tokens.pop_front();
                     return Some(constant);
-                },
+                }
                 Token::Lrb(_) => {
                     self.lexer.tokens.pop_front();
                     let expr = self.boolean();
                     let next = self.lexer.tokens.pop_front();
                     if let Some(Token::Rrb(_)) = next {
                         return expr;
-                    }
-                    else {
+                    } else {
                         println!("token did not match )");
                         return None;
                     }
-                },
+                }
                 Token::Id(s) => {
                     self.lexer.tokens.pop_front();
                     let symbol = self.symbol_table.get(&s.to_string());
@@ -690,13 +679,13 @@ impl Parser {
                             }
                             let id = ExprUnion::Id(Box::new(sym.id.clone()));
                             return Some(id);
-                        },
+                        }
                         None => {
                             println!("{} undeclared", s.to_string());
                             return None;
                         }
                     }
-                },
+                }
                 _ => {
                     return None;
                 }
