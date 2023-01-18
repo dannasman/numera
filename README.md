@@ -1,7 +1,7 @@
 # numera
 Compiler project inspired by the dragon book. Contains only the compiler frontend at the moment.
 ## Example
-Example code snippet`foo.txt` in root directory:
+Example code snippet `foo.txt` in root directory:
 ```
 {
     x = 1;
