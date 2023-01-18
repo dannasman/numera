@@ -194,7 +194,6 @@ impl Lexer {
                             ch = it.peek();
                         }
                     }
-                    println!("{}", s);
                     match self.words.get(&s) {
                         Some(t) => self.tokens.push_back(Token::clone(t)),
                         None => {
@@ -242,9 +241,6 @@ mod tests {
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
-        assert_eq!(
-            r#"[Id("{"), Num(1.0), Id("}")]"#,
-            output
-        )
+        assert_eq!(r#"[Id("{"), Num(1.0), Id("}")]"#, output)
     }
 }
