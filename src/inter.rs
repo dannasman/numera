@@ -518,12 +518,16 @@ impl StmtNode for While {
 pub struct Set {
     id: Id,
     expr: ExprUnion,
-    temp_count: Arc<Mutex<u32>>
+    temp_count: Arc<Mutex<u32>>,
 }
 
 impl Set {
     pub fn new(id: Id, expr: ExprUnion, temp_count: Arc<Mutex<u32>>) -> Self {
-        return Set { id, expr, temp_count };
+        return Set {
+            id,
+            expr,
+            temp_count,
+        };
     }
 }
 
@@ -533,15 +537,15 @@ impl StmtNode for Set {
             ExprUnion::Or(or) => {
                 let temp = or.gen(b, a, Arc::clone(&self.temp_count));
                 self.emit(format!("{} = {}", self.id.to_string(), temp.to_string()));
-            },
+            }
             ExprUnion::And(and) => {
                 let temp = and.gen(b, a, Arc::clone(&self.temp_count));
                 self.emit(format!("{} = {}", self.id.to_string(), temp.to_string()));
-            },
+            }
             ExprUnion::Rel(rel) => {
                 let temp = rel.gen(b, a, Arc::clone(&self.temp_count));
                 self.emit(format!("{} = {}", self.id.to_string(), temp.to_string()));
-            },
+            }
             _ => {
                 let e = self.expr.match_expr();
                 self.emit(format!("{} = {}", self.id.to_string(), e));
@@ -558,11 +562,7 @@ pub struct Seq {
 }
 
 impl Seq {
-    pub fn new(
-        label: Arc<Mutex<u32>>,
-        stmt1: Option<StmtUnion>,
-        stmt2: Option<StmtUnion>,
-    ) -> Self {
+    pub fn new(label: Arc<Mutex<u32>>, stmt1: Option<StmtUnion>, stmt2: Option<StmtUnion>) -> Self {
         return Seq {
             label,
             stmt1,
@@ -586,7 +586,7 @@ impl StmtNode for Seq {
                 }
                 None => {
                     s1.gen(b, a);
-                },
+                }
             },
             None => match &self.stmt2 {
                 Some(s2) => {
@@ -600,7 +600,7 @@ impl StmtNode for Seq {
 
 #[derive(Debug, Clone)]
 pub struct Break {
-    stmt: Option<StmtUnion>
+    stmt: Option<StmtUnion>,
 }
 
 impl Break {

@@ -17,6 +17,17 @@ pub enum Token {
     Ge(String),
     Lt(String),
     Gt(String),
+    Asgn(String),
+    Not(String),
+    Add(String),
+    Sub(String),
+    Mul(String),
+    Div(String),
+    Lcb(String),
+    Rcb(String),
+    Lrb(String),
+    Rrb(String),
+    Scol(String)
 }
 
 impl Token {
@@ -37,6 +48,17 @@ impl Token {
             Token::Ge(s) => s,
             Token::Lt(s) => s,
             Token::Gt(s) => s,
+            Token::Asgn(s) => s,
+            Token::Not(s) => s,
+            Token::Add(s) => s,
+            Token::Sub(s) => s,
+            Token::Mul(s) => s,
+            Token::Div(s) => s,
+            Token::Lcb(s) => s,
+            Token::Rcb(s) => s,
+            Token::Lrb(s) => s,
+            Token::Rrb(s) => s,
+            Token::Scol(s) => s
         }
     }
 }
@@ -101,7 +123,7 @@ impl Lexer {
                         self.tokens.push_back(Token::Eql("==".to_string()));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Id("=".to_string()));
+                        self.tokens.push_back(Token::Asgn("=".to_string()));
                     };
                 }
                 '!' => {
@@ -111,7 +133,7 @@ impl Lexer {
                         self.tokens.push_back(Token::Ne("!=".to_string()));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Id("!".to_string()));
+                        self.tokens.push_back(Token::Not("!".to_string()));
                     };
                 }
                 '<' => {
@@ -133,6 +155,42 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Gt(">".to_string()));
                     };
+                }
+                '+' => {
+                    self.tokens.push_back(Token::Add("+".to_string()));
+                    it.next();
+                }
+                '-' => {
+                    self.tokens.push_back(Token::Sub("-".to_string()));
+                    it.next();
+                }
+                '*' => {
+                    self.tokens.push_back(Token::Mul("*".to_string()));
+                    it.next();
+                }
+                '/' => {
+                    self.tokens.push_back(Token::Div("/".to_string()));
+                    it.next();
+                }
+                '{' => {
+                    self.tokens.push_back(Token::Lcb("{".to_string()));
+                    it.next();
+                }
+                '}' => {
+                    self.tokens.push_back(Token::Rcb("}".to_string()));
+                    it.next();
+                }
+                '(' => {
+                    self.tokens.push_back(Token::Lrb("(".to_string()));
+                    it.next();
+                }
+                ')' => {
+                    self.tokens.push_back(Token::Rrb(")".to_string()));
+                    it.next();
+                }
+                ';' => {
+                    self.tokens.push_back(Token::Scol(";".to_string()));
+                    it.next();
                 }
                 '0'..='9' => {
                     let mut n = c
@@ -230,17 +288,17 @@ mod tests {
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
-            r#"[Num(1.0), Id("_"), While("while"), Id("{"), Ne("!="), And("&&"), Id("="), Id("ok"), Num(3.4), Num(1.0), Id("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#,
+            r#"[Num(1.0), Id("_"), While("while"), Lcb("{"), Ne("!="), And("&&"), Asgn("="), Id("ok"), Num(3.4), Num(1.0), Asgn("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#,
             output
         )
     }
 
     #[test]
     fn correct_block_handling() {
-        let input = String::from("{ 1 }");
+        let input = String::from("{(*/;)}");
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
-        assert_eq!(r#"[Id("{"), Num(1.0), Id("}")]"#, output)
+        assert_eq!(r#"[Lcb("{"), Lrb("("), Mul("*"), Div("/"), Scol(";"), Rrb(")"), Rcb("}")]"#, output)
     }
 }

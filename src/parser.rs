@@ -54,27 +54,6 @@ impl Parser {
         return false;
     }
 
-    fn match_token_ref(t: &Token, s: String) -> bool {
-        if t.to_owned().value_to_string() == s {
-            return true;
-        }
-        return false;
-    }
-
-    fn match_option_token(ot: Option<Token>, s: String) -> bool {
-        match ot {
-            Some(token) => return Self::match_token(token, s),
-            None => return false,
-        }
-    }
-
-    fn match_option_token_ref(ot: Option<&Token>, s: String) -> bool {
-        match ot {
-            Some(token) => return Self::match_token_ref(token, s),
-            None => return false,
-        }
-    }
-
     pub fn program(&mut self, input: &String) {
         self.lexer.lex(input);
         let stmt = self.block();
@@ -96,32 +75,20 @@ impl Parser {
 
     fn block(&mut self) -> Option<StmtUnion> {
         let mut t = self.lexer.tokens.pop_front();
-        match t {
-            Some(token) => {
-                if !Self::match_token(token, "{".to_string()) {
-                    println!("token did not match {{");
-                    return None;
-                }
-            }
-            None => {
-                return None;
-            }
+        if let Some(Token::Lcb(_)) = t {
+        } else {
+            println!("Token did not match {{");
+            return None;
         }
+
         let saved_symbol_table = self.symbol_table.clone();
         self.increment_scope();
         let stmt = self.stmts();
         t = self.lexer.tokens.pop_front();
-        match t {
-            Some(token) => {
-                if !Self::match_token(token, "}".to_string()) {
-                    println!("token did not match }}");
-                    return None;
-                }
-            }
-            None => {
-                println!("token did not match }}");
-                return None;
-            }
+        if let Some(Token::Rcb(_)) = t {
+        } else {
+            println!("token did not match }}");
+            return None;
         }
 
         self.decrement_scope();
@@ -133,15 +100,21 @@ impl Parser {
         let t = self.lexer.tokens.front();
         match t {
             Some(token) => {
-                if Self::match_token(token.clone(), "}".to_string()) {
-                    return None;
+                match token {
+                    Token::Rcb(_) => {
+                        return None
+                    },
+                    _ => {
+                        let stmt1 = self.stmt();
+                        let stmt2 = self.stmts();
+                        let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
+                        return Some(seq);
+                    }
                 }
-                let stmt1 = self.stmt();
-                let stmt2 = self.stmts();
-                let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
-                return Some(seq);
             }
-            None => return None,
+            None => {
+                return None;
+            }
         }
     }
 
@@ -150,24 +123,26 @@ impl Parser {
         match t {
             Some(token) => {
                 match token {
+                    Token::Scol(_) => {
+                        self.lexer.tokens.pop_front();
+                        return None;
+                    },
+                    Token::Lcb(_) => {
+                        let stmt = self.block();
+                        return stmt;
+                    }
                     Token::Id(s) => {
-                        if s == ";" {
-                            self.lexer.tokens.pop_front();
-                            return None;
-                        } else if s == "{" {
-                            let stmt = self.block();
-                            return stmt;
-                        } else if s == "break" {
-                            // TODO: palaa tähän, keksi Breakille parempi ratkaisu
+                        if s == "break" {
                             self.lexer.tokens.pop_front();
                             let next_t = self.lexer.tokens.pop_front();
-                            if !Self::match_option_token(next_t, ";".to_string()) {
+                            if let Some(Token::Scol(_)) = next_t {
+                                let enclosing = self.enclosing_stmt.read().unwrap().clone();
+                                let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
+                                return Some(break_stmt);
+                            } else {
                                 println!("token did not match ;");
                                 return None;
                             }
-                            let enclosing = self.enclosing_stmt.read().unwrap().clone();
-                            let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
-                            return Some(break_stmt);
                         } else {
                             let stmt = self.assign();
                             return stmt;
@@ -176,13 +151,15 @@ impl Parser {
                     Token::If(_) => {
                         self.lexer.tokens.pop_front();
                         let mut next_t = self.lexer.tokens.pop_front();
-                        if !Self::match_option_token(next_t, "(".to_string()) {
+                        if let Some(Token::Lrb(_)) = next_t {
+                        } else {
                             println!("token did not match (");
                             return None;
                         }
                         let expr = self.boolean();
                         next_t = self.lexer.tokens.pop_front();
-                        if !Self::match_option_token(next_t, ")".to_string()) {
+                        if let Some(Token::Rrb(_)) = next_t {
+                        } else {
                             println!("token did not match )");
                             return None;
                         }
@@ -240,26 +217,31 @@ impl Parser {
                         let while_mutex = Arc::new(Mutex::new(0));
                         let while_stmt = StmtUnion::While(Box::new(While::new(
                             Arc::clone(&self.label),
-                            Arc::clone(&while_mutex)
+                            Arc::clone(&while_mutex),
                         )));
 
                         let enclosing_read = self.enclosing_stmt.read().unwrap().clone();
                         let mut enclosing_write = self.enclosing_stmt.write().unwrap();
-                        *enclosing_write = Some(StmtUnion::While(Box::new(While::new(Arc::clone(&self.label), Arc::clone(&while_mutex)))));
+                        *enclosing_write = Some(StmtUnion::While(Box::new(While::new(
+                            Arc::clone(&self.label),
+                            Arc::clone(&while_mutex),
+                        ))));
                         drop(enclosing_write);
 
                         let mut next_t = self.lexer.tokens.pop_front();
-                        if !Self::match_option_token(next_t, "(".to_string()) {
+                        if let Some(Token::Lrb(_)) = next_t {
+                        } else {
                             println!("token did not match (");
                             return None;
                         }
                         let expr = self.boolean();
                         next_t = self.lexer.tokens.pop_front();
-                        if !Self::match_option_token(next_t, ")".to_string()) {
+                        if let Some(Token::Rrb(_)) = next_t {
+                        } else {
                             println!("token did not match )");
                             return None;
                         }
-                        
+
                         let stmt = self.stmt();
 
                         match while_stmt {
@@ -301,7 +283,8 @@ impl Parser {
                             let peek = self.lexer.tokens.front();
                             match peek {
                                 Some(ptoken) => {
-                                    if !Self::match_token(ptoken.clone(), "=".to_string()) {
+                                    if let Token::Asgn(_) = ptoken {
+                                    } else {
                                         println!("token did not match =");
                                         return None;
                                     }
@@ -310,9 +293,14 @@ impl Parser {
                                     let expr = self.boolean();
                                     match expr {
                                         Some(x) => {
-                                            let stmt = StmtUnion::Set(Box::new(Set::new(id, x, Arc::clone(&self.temp_count))));
+                                            let stmt = StmtUnion::Set(Box::new(Set::new(
+                                                id,
+                                                x,
+                                                Arc::clone(&self.temp_count),
+                                            )));
                                             let next_t = self.lexer.tokens.pop_front();
-                                            if !Self::match_option_token(next_t, ";".to_string()) {
+                                            if let Some(Token::Scol(_)) = next_t {
+                                            } else{
                                                 println!("token did not match ;");
                                                 return None;
                                             }
@@ -330,7 +318,8 @@ impl Parser {
                         }
                         None => {
                             let mut next_t = self.lexer.tokens.pop_front();
-                            if !Self::match_option_token(next_t, "=".to_string()) {
+                            if let Some(Token::Asgn(_)) = next_t {
+                            } else {
                                 println!("{} undeclared", s.to_string());
                                 return None;
                             }
@@ -340,9 +329,14 @@ impl Parser {
                             self.symbol_table.insert(s.to_string(), new_symbol);
                             match expr {
                                 Some(x) => {
-                                    let stmt = StmtUnion::Set(Box::new(Set::new(id, x, Arc::clone(&self.temp_count))));
+                                    let stmt = StmtUnion::Set(Box::new(Set::new(
+                                        id,
+                                        x,
+                                        Arc::clone(&self.temp_count),
+                                    )));
                                     next_t = self.lexer.tokens.pop_front();
-                                    if !Self::match_option_token(next_t, ";".to_string()) {
+                                    if let Some(Token::Scol(_)) = next_t {
+                                    } else {
                                         println!("token did not match ;");
                                         return None;
                                     }
@@ -370,9 +364,10 @@ impl Parser {
     fn boolean(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.join();
         while let Some(Token::Or(s)) = self.lexer.tokens.front() {
+            let token_string = s.clone();
+            self.lexer.tokens.pop_front();
             match expr1 {
                 Some(x1) => {
-                    let token_string = s.clone();
                     let expr2 = self.join();
                     match expr2 {
                         Some(x2) => {
@@ -393,7 +388,6 @@ impl Parser {
                     expr1 = None;
                 }
             }
-            self.lexer.tokens.pop_front();
         }
         return expr1;
     }
@@ -402,6 +396,7 @@ impl Parser {
         let mut expr1 = self.equality();
         while let Some(Token::And(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
+            self.lexer.tokens.pop_front();
             match expr1 {
                 Some(x1) => {
                     let expr2 = self.equality();
@@ -424,7 +419,6 @@ impl Parser {
                     expr1 = None;
                 }
             }
-            self.lexer.tokens.pop_front();
         }
         return expr1;
     }
@@ -433,6 +427,7 @@ impl Parser {
         let mut expr1 = self.rel();
         while let Some(Token::Eql(s)) | Some(Token::Ne(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
+            self.lexer.tokens.pop_front();
             match expr1 {
                 Some(x1) => {
                     let expr2 = self.rel();
@@ -465,7 +460,6 @@ impl Parser {
                     expr1 = None;
                 }
             }
-            self.lexer.tokens.pop_front();
         }
         return expr1;
     }
@@ -527,31 +521,26 @@ impl Parser {
 
     fn expr(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.term();
-        while Self::match_option_token_ref(self.lexer.tokens.front(), "+".to_string())
-            || Self::match_option_token_ref(self.lexer.tokens.front(), "-".to_string())
+        if let Some(Token::Add(s)) | Some(Token::Sub(s)) =
+            self.lexer.tokens.front()
         {
-            let t = self.lexer.tokens.pop_front();
+            let token_string = s.clone();
+            self.lexer.tokens.pop_front();
             match expr1 {
                 Some(x1) => {
                     let expr2 = self.term();
                     match expr2 {
                         Some(x2) => {
-                            if Self::match_option_token(
-                                t.clone(),
-                                "+".to_string(),
-                            ) {
+                            if token_string == "+".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
-                                    Token::Id("+".to_string()),
+                                    Token::Add(token_string),
                                     x1,
                                     x2,
                                 )));
                                 expr1 = Some(arith);
-                            } else if Self::match_option_token(
-                                t.clone(),
-                                "-".to_string(),
-                            ) {
+                            } else if token_string == "-".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
-                                    Token::Id("-".to_string()),
+                                    Token::Sub(token_string),
                                     x1,
                                     x2,
                                 )));
@@ -575,31 +564,26 @@ impl Parser {
 
     fn term(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.unary();
-        while Self::match_option_token_ref(self.lexer.tokens.front(), "*".to_string())
-            || Self::match_option_token_ref(self.lexer.tokens.front(), "/".to_string())
+        if let Some(Token::Mul(s)) | Some(Token::Div(s)) =
+            self.lexer.tokens.front()
         {
-            let t = self.lexer.tokens.pop_front();
+            let token_string = s.clone();
+            self.lexer.tokens.pop_front();
             match expr1 {
                 Some(x1) => {
                     let expr2 = self.unary();
                     match expr2 {
                         Some(x2) => {
-                            if Self::match_option_token(
-                                t.clone(),
-                                "*".to_string(),
-                            ) {
+                            if token_string == "*".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
-                                    Token::Id("*".to_string()),
+                                    Token::Mul(token_string),
                                     x1,
                                     x2,
                                 )));
                                 expr1 = Some(arith);
-                            } else if Self::match_option_token(
-                                t.clone(),
-                                "/".to_string(),
-                            ) {
+                            } else if token_string == "/".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
-                                    Token::Id("/".to_string()),
+                                    Token::Div(token_string),
                                     x1,
                                     x2,
                                 )));
@@ -625,13 +609,13 @@ impl Parser {
         let peek = self.lexer.tokens.front();
         match peek {
             Some(t) => {
-                if Self::match_token(t.clone(), "-".to_string()) {
+                if let Token::Sub(s) = t.clone() {
                     self.lexer.tokens.pop_front();
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
                             let unary = ExprUnion::Unary(Box::new(Unary::new(
-                                Token::Id("-".to_string()),
+                                Token::Sub(s),
                                 x,
                             )));
                             return Some(unary);
@@ -640,13 +624,13 @@ impl Parser {
                             return None;
                         }
                     }
-                } else if Self::match_token(t.clone(), "!".to_string()) {
+                } else if let Token::Not(s) = t.clone() {
                     self.lexer.tokens.pop_front();
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
                             let unary =
-                                ExprUnion::Not(Box::new(Not::new(Token::Id("!".to_string()), x)));
+                                ExprUnion::Not(Box::new(Not::new(Token::Not(s), x)));
                             return Some(unary);
                         }
                         None => {
@@ -682,35 +666,37 @@ impl Parser {
                     let constant = ExprUnion::Constant(Box::new(Constant::new(Token::False(s))));
                     self.lexer.tokens.pop_front();
                     return Some(constant);
-                }
+                },
+                Token::Lrb(_) => {
+                    self.lexer.tokens.pop_front();
+                    let expr = self.boolean();
+                    let next = self.lexer.tokens.pop_front();
+                    if let Some(Token::Rrb(_)) = next {
+                        return expr;
+                    }
+                    else {
+                        println!("token did not match )");
+                        return None;
+                    }
+                },
                 Token::Id(s) => {
                     self.lexer.tokens.pop_front();
-                    if s == "(".to_string() {
-                        let expr = self.boolean();
-                        let next = self.lexer.tokens.pop_front();
-                        if !Self::match_option_token(next, ")".to_string()) {
-                            println!("token did not match )");
-                            return None;
-                        }
-                        return expr;
-                    } else {
-                        let symbol = self.symbol_table.get(&s.to_string());
-                        match symbol {
-                            Some(sym) => {
-                                if sym.scope > self.current_scope {
-                                    println!("{} out of scope", s.to_string());
-                                    return None;
-                                }
-                                let id = ExprUnion::Id(Box::new(sym.id.clone()));
-                                return Some(id);
-                            }
-                            None => {
-                                println!("{} undeclared", s.to_string());
+                    let symbol = self.symbol_table.get(&s.to_string());
+                    match symbol {
+                        Some(sym) => {
+                            if sym.scope > self.current_scope {
+                                println!("{} out of scope", s.to_string());
                                 return None;
                             }
+                            let id = ExprUnion::Id(Box::new(sym.id.clone()));
+                            return Some(id);
+                        },
+                        None => {
+                            println!("{} undeclared", s.to_string());
+                            return None;
                         }
                     }
-                }
+                },
                 _ => {
                     return None;
                 }
