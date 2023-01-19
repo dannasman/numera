@@ -531,7 +531,7 @@ impl Parser {
 
     fn expr(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.term();
-        if let Some(Token::Add(s)) | Some(Token::Sub(s)) = self.lexer.tokens.front() {
+        while let Some(Token::Add(s)) | Some(Token::Sub(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
             self.lexer.tokens.pop_front();
             match expr1 {
@@ -574,7 +574,7 @@ impl Parser {
 
     fn term(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.unary();
-        if let Some(Token::Mul(s)) | Some(Token::Div(s)) = self.lexer.tokens.front() {
+        while let Some(Token::Mul(s)) | Some(Token::Div(s)) = self.lexer.tokens.front() {
             let token_string = s.clone();
             self.lexer.tokens.pop_front();
             match expr1 {

@@ -192,7 +192,7 @@ impl Arith {
 
     fn reduce(&self) -> Temp {
         let temp = Temp::new(Arc::clone(&self.temp_count));
-        self.emit(format!("{} = {}", temp.to_string(), self.to_string()));
+        self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         return temp;
     }
 }
@@ -511,9 +511,31 @@ impl Rel {
 
 impl ExprNode for Rel {
     fn jumping(&self, t: u32, f: u32) {
-        //let e1 = self.expr1.match_expr();
-        //let e2 = self.expr2.match_expr();
-        let test = self.to_string();
+        let mut e1 = self.expr1.clone();
+        let mut e2 = self.expr2.clone();
+        
+        match e1 {
+            ExprUnion::Arith(arith) => {
+                e1 = ExprUnion::Temp(Box::new(arith.reduce()));
+            },
+            ExprUnion::Unary(unary) => {
+                e1 = ExprUnion::Temp(Box::new(unary.reduce()));
+            },
+            _ => ()
+        }
+
+        
+        match e2 {
+            ExprUnion::Arith(arith) => {
+                e2 = ExprUnion::Temp(Box::new(arith.reduce()));
+            },
+            ExprUnion::Unary(unary) => {
+                e2 = ExprUnion::Temp(Box::new(unary.reduce()));
+            },
+            _ => ()
+        }
+
+        let test = format!("{} {} {}", e1.match_expr(), self.op.clone().value_to_string(), e2.match_expr());
         self.emit_jumps(test, t, f);
     }
 
