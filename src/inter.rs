@@ -58,14 +58,14 @@ impl ExprUnion {
     fn match_expr(&self) -> String {
         match self {
             ExprUnion::Id(id) => return id.gen().to_string(),
-            ExprUnion::Arith(arith) => return arith.gen().to_string(),
+            ExprUnion::Arith(arith) => arith.gen().to_string(),
             ExprUnion::Temp(temp) => return temp.gen().to_string(),
-            ExprUnion::Unary(unary) => return unary.gen().to_string(),
+            ExprUnion::Unary(unary) => unary.gen().to_string(),
             ExprUnion::Constant(constant) => return constant.gen().to_string(),
-            ExprUnion::Or(or) => return or.gen().to_string(),
-            ExprUnion::And(and) => return and.gen().to_string(),
-            ExprUnion::Not(not) => return not.gen().to_string(),
-            ExprUnion::Rel(rel) => return rel.gen().to_string(),
+            ExprUnion::Or(or) => or.gen().to_string(),
+            ExprUnion::And(and) => and.gen().to_string(),
+            ExprUnion::Not(not) => not.gen().to_string(),
+            ExprUnion::Rel(rel) => rel.gen().to_string(),
         }
     }
 
@@ -101,9 +101,9 @@ impl StmtUnion {
                 let after_lock = while_stmt.after.lock().unwrap();
                 let after = *after_lock;
                 drop(after_lock);
-                return after;
+                after
             }
-            _ => return 0,
+            _ => 0,
         }
     }
     pub fn emit_label(&self, i: u32) {
@@ -135,17 +135,17 @@ pub struct Id {
 
 impl Id {
     pub fn gen(&self) -> &Self {
-        return self;
+        self
     }
 
     pub fn new(token: Token) -> Self {
-        return Id { token };
+        Id { token }
     }
 }
 
 impl ExprNode for Id {
     fn to_string(&self) -> String {
-        return self.token.clone().value_to_string();
+        self.token.clone().value_to_string()
     }
 }
 
@@ -183,17 +183,17 @@ impl Arith {
             _ => ()
         }
 
-        return Arith::new(self.op.clone(), Arc::clone(&self.temp_count), e1, e2);
+        Arith::new(self.op.clone(), Arc::clone(&self.temp_count), e1, e2)
     }
 
     pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        return Arith { op, temp_count, expr1, expr2 };
+        Arith { op, temp_count, expr1, expr2 }
     }
 
     fn reduce(&self) -> Temp {
         let temp = Temp::new(Arc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
-        return temp;
+        temp
     }
 }
 
@@ -204,7 +204,7 @@ impl ExprNode for Arith {
     fn to_string(&self) -> String {
         let e1 = self.expr1.match_expr();
         let e2 = self.expr2.match_expr();
-        return format!("{} {} {}", e1, self.op.clone().value_to_string(), e2);
+        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
 
@@ -215,20 +215,20 @@ pub struct Temp {
 
 impl Temp {
     pub fn gen(&self) -> &Self {
-        return self;
+        self
     }
     pub fn new(temp_count: Arc<Mutex<u32>>) -> Self {
         let mut c = temp_count.lock().unwrap();
         *c += 1;
         let number = *c;
         drop(c);
-        return Temp { number };
+        Temp { number }
     }
 }
 
 impl ExprNode for Temp {
     fn to_string(&self) -> String {
-        return format!("t{}", self.number);
+        format!("t{}", self.number)
     }
 }
 
@@ -251,16 +251,16 @@ impl Unary {
             },
             _ => ()
         }
-        return Unary::new(self.op.clone(), Arc::clone(&self.temp_count), e);
+        Unary::new(self.op.clone(), Arc::clone(&self.temp_count), e)
     }
     pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr: ExprUnion) -> Self {
-        return Unary { op, temp_count, expr };
+        Unary { op, temp_count, expr }
     }
 
     fn reduce(&self) -> Temp {
         let temp = Temp::new(Arc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
-        return temp;
+        temp
     }
 }
 
@@ -271,7 +271,7 @@ impl ExprNode for Unary {
 
     fn to_string(&self) -> String {
         let e = self.expr.match_expr();
-        return format!("{} {}", self.op.clone().value_to_string(), e);
+        format!("{} {}", self.op.clone().value_to_string(), e)
     }
 }
 
@@ -282,10 +282,10 @@ pub struct Constant {
 
 impl Constant {
     pub fn gen(&self) -> &Self {
-        return self;
+        self
     }
     pub fn new(constant: Token) -> Self {
-        return Constant { constant };
+        Constant { constant }
     }
 }
 
@@ -302,12 +302,12 @@ impl ExprNode for Constant {
                     self.emit(format!("goto L{}", f));
                 }
             }
-            _ => return, //TODO: palaa tähån kun funktioiden palautus on Result-tyyppiä
+            _ => (), //TODO: palaa tähån kun funktioiden palautus on Result-tyyppiä
         }
     }
 
     fn to_string(&self) -> String {
-        return self.constant.clone().value_to_string();
+        self.constant.clone().value_to_string()
     }
 }
 
@@ -337,16 +337,16 @@ impl Or {
         self.emit_label(f);
         self.emit(format!("{} = false", temp.to_string()));
         self.emit_label(a);
-        return temp;
+        temp
     }
     pub fn new(label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        return Or {
+        Or {
             label,
             temp_count,
             op,
             expr1,
             expr2,
-        };
+        }
     }
 }
 
@@ -369,7 +369,7 @@ impl ExprNode for Or {
     fn to_string(&self) -> String {
         let e1 = self.expr1.match_expr();
         let e2 = self.expr2.match_expr();
-        return format!("{} {} {}", e1, self.op.clone().value_to_string(), e2);
+        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
 
@@ -399,16 +399,16 @@ impl And {
         self.emit_label(f);
         self.emit(format!("{} = false", temp.to_string()));
         self.emit_label(a);
-        return temp;
+        temp
     }
     pub fn new(label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        return And {
+        And {
             label,
             temp_count,
             op,
             expr1,
             expr2,
-        };
+        }
     }
 }
 
@@ -431,7 +431,7 @@ impl ExprNode for And {
     fn to_string(&self) -> String {
         let e1 = self.expr1.match_expr();
         let e2 = self.expr2.match_expr();
-        return format!("{} {} {}", e1, self.op.clone().value_to_string(), e2);
+        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
 
@@ -459,10 +459,10 @@ impl Not {
         self.emit_label(f);
         self.emit(format!("{} = false", temp.to_string()));
         self.emit_label(a);
-        return temp;
+        temp
     }
     pub fn new(op: Token, label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, expr: ExprUnion) -> Self {
-        return Not { op, label, temp_count, expr };
+        Not { op, label, temp_count, expr }
     }
 }
 
@@ -473,7 +473,7 @@ impl ExprNode for Not {
 
     fn to_string(&self) -> String {
         let e = self.expr.match_expr();
-        return format!("{} {}", self.op.clone().value_to_string(), e);
+        format!("{} {}", self.op.clone().value_to_string(), e)
     }
 }
 
@@ -502,10 +502,10 @@ impl Rel {
         self.emit_label(f);
         self.emit(format!("{} = false", temp.to_string()));
         self.emit_label(a);
-        return temp;
+        temp
     }
     pub fn new(op: Token, label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        return Rel { op, label, temp_count, expr1, expr2 };
+        Rel { op, label, temp_count, expr1, expr2 }
     }
 }
 
@@ -542,7 +542,7 @@ impl ExprNode for Rel {
     fn to_string(&self) -> String {
         let e1 = self.expr1.match_expr();
         let e2 = self.expr2.match_expr();
-        return format!("{} {} {}", e1, self.op.clone().value_to_string(), e2);
+        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
 
@@ -555,7 +555,7 @@ pub struct If {
 
 impl If {
     pub fn new(label: Arc<Mutex<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
-        return If { label, expr, stmt };
+        If { label, expr, stmt }
     }
 }
 
@@ -586,12 +586,12 @@ impl Else {
         stmt1: StmtUnion,
         stmt2: StmtUnion,
     ) -> Self {
-        return Else {
+        Else {
             label,
             expr,
             stmt1,
             stmt2,
-        };
+        }
     }
 }
 
@@ -624,12 +624,12 @@ pub struct While {
 
 impl While {
     pub fn new(label: Arc<Mutex<u32>>, after: Arc<Mutex<u32>>) -> Self {
-        return While {
+        While {
             label,
             after,
             expr: None,
             stmt: None,
-        };
+        }
     }
     pub fn init(&mut self, expr: Option<ExprUnion>, stmt: Option<StmtUnion>) {
         self.expr = expr;
@@ -675,10 +675,10 @@ pub struct Set {
 
 impl Set {
     pub fn new(id: Id, expr: ExprUnion) -> Self {
-        return Set {
+        Set {
             id,
             expr,
-        };
+        }
     }
 }
 
@@ -698,11 +698,11 @@ pub struct Seq {
 
 impl Seq {
     pub fn new(label: Arc<Mutex<u32>>, stmt1: Option<StmtUnion>, stmt2: Option<StmtUnion>) -> Self {
-        return Seq {
+        Seq {
             label,
             stmt1,
             stmt2,
-        };
+        }
     }
 }
 
@@ -740,7 +740,7 @@ pub struct Break {
 
 impl Break {
     pub fn new(stmt: Option<StmtUnion>) -> Self {
-        return Break { stmt };
+        Break { stmt }
     }
 }
 

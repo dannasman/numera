@@ -14,7 +14,7 @@ struct Symbol {
 
 impl Symbol {
     pub fn new(scope: u32, id: Id) -> Self {
-        return Symbol { scope, id };
+        Symbol { scope, id }
     }
 }
 
@@ -29,41 +29,39 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Self {
-        return Parser {
+        Parser {
             current_scope: 0,
             enclosing_stmt: Arc::new(RwLock::new(None)),
             label: Arc::new(Mutex::new(0)),
-            lexer: lexer,
+            lexer,
             symbol_table: HashMap::new(),
             temp_count: Arc::new(Mutex::new(0)),
-        };
+        }
     }
 
     fn increment_scope(&mut self) {
-        self.current_scope = self.current_scope + 1;
+        self.current_scope += 1;
     }
 
     fn decrement_scope(&mut self) {
-        self.current_scope = self.current_scope - 1;
+        self.current_scope -= 1;
     }
 
     pub fn program(&mut self, input: &String) {
         self.lexer.lex(input);
+        
         let stmt = self.block();
-        match stmt {
-            Some(s) => {
-                let mut l = self.label.lock().unwrap();
-                *l += 1;
-                let begin = *l;
-                *l += 1;
-                let after = *l;
-                drop(l);
+        if let Some(s) = stmt {
+            let mut l = self.label.lock().unwrap();
+            *l += 1;
+            let begin = *l;
+            *l += 1;
+            let after = *l;
+            drop(l);
 
-                s.emit_label(begin);
-                s.gen(begin, after);
-                s.emit_label(after);
-            }
-            None => (),
+            s.emit_label(begin);
+            s.gen(begin, after);
+            s.emit_label(after);
         }
     }
 
@@ -90,23 +88,23 @@ impl Parser {
         //set saved symbol table
         self.symbol_table = saved_symbol_table;
         self.decrement_scope();
-        return stmt;
+        stmt
     }
 
     fn stmts(&mut self) -> Option<StmtUnion> {
         let t = self.lexer.tokens.front();
         match t {
             Some(token) => match token {
-                Token::Rcb(_) => return None,
+                Token::Rcb(_) => None,
                 _ => {
                     let stmt1 = self.stmt();
                     let stmt2 = self.stmts();
                     let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
-                    return Some(seq);
+                    Some(seq)
                 }
             },
             None => {
-                return None;
+                None
             }
         }
     }
@@ -118,11 +116,11 @@ impl Parser {
                 match token {
                     Token::Scol(_) => {
                         self.lexer.tokens.pop_front();
-                        return None;
+                        None
                     }
                     Token::Lcb(_) => {
-                        let stmt = self.block();
-                        return stmt;
+                        
+                        self.block()
                     }
                     Token::Id(s) => {
                         if s == "break" {
@@ -131,14 +129,14 @@ impl Parser {
                             if let Some(Token::Scol(_)) = next_t {
                                 let enclosing = self.enclosing_stmt.read().unwrap().clone();
                                 let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
-                                return Some(break_stmt);
+                                Some(break_stmt)
                             } else {
                                 println!("token did not match ;");
-                                return None;
+                                None
                             }
                         } else {
-                            let stmt = self.assign();
-                            return stmt;
+                            
+                            self.assign()
                         }
                     }
                     Token::If(_) => {
@@ -174,18 +172,18 @@ impl Parser {
                                                     let else_stmt = StmtUnion::Else(Box::new(
                                                         Else::new(Arc::clone(&self.label), x, s1, s2),
                                                     ));
-                                                    return Some(else_stmt);
+                                                    Some(else_stmt)
                                                 }
                                                 None => {
-                                                    return None;
+                                                    None
                                                 }
                                             },
                                             None => {
-                                                return None;
+                                                None
                                             }
                                         },
                                         None => {
-                                            return None;
+                                            None
                                         }
                                     }
                                 } else {
@@ -197,17 +195,17 @@ impl Parser {
                                                     x,
                                                     s1,
                                                 )));
-                                                return Some(if_stmt);
+                                                Some(if_stmt)
                                             }
                                             None => {
-                                                return None;
+                                                None
                                             }
                                         },
-                                        None => return None,
+                                        None => None,
                                     }
                                 }
                             }
-                            None => return None,
+                            None => None,
                         }
                     }
                     Token::While(_) => {
@@ -248,21 +246,21 @@ impl Parser {
                                 let mut enclosing_write = self.enclosing_stmt.write().unwrap();
                                 *enclosing_write = enclosing_read;
                                 drop(enclosing_write);
-                                return Some(StmtUnion::While(ws));
+                                Some(StmtUnion::While(ws))
                             }
                             _ => {
                                 println!("failed to initialize while statement");
-                                return None;
+                                None
                             }
                         }
                     }
                     _ => {
-                        let stmt = self.assign();
-                        return stmt;
+                        
+                        self.assign()
                     }
                 }
             }
-            None => return None,
+            None => None,
         }
     }
 
@@ -386,7 +384,7 @@ impl Parser {
                 }
             }
         }
-        return expr1;
+        expr1
     }
 
     fn join(&mut self) -> Option<ExprUnion> {
@@ -418,7 +416,7 @@ impl Parser {
                 }
             }
         }
-        return expr1;
+        expr1
     }
 
     fn equality(&mut self) -> Option<ExprUnion> {
@@ -431,7 +429,7 @@ impl Parser {
                     let expr2 = self.rel();
                     match expr2 {
                         Some(x2) => {
-                            if token_string == "==".to_string() {
+                            if token_string == *"==" {
                                 let eql = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Eql(token_string),
                                     Arc::clone(&self.label),
@@ -440,7 +438,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(eql);
-                            } else if token_string == "!=".to_string() {
+                            } else if token_string == *"!=" {
                                 let ne = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ne(token_string),
                                     Arc::clone(&self.label),
@@ -463,7 +461,7 @@ impl Parser {
                 }
             }
         }
-        return expr1;
+        expr1
     }
 
     fn rel(&mut self) -> Option<ExprUnion> {
@@ -478,7 +476,7 @@ impl Parser {
                     let expr2 = self.expr();
                     match expr2 {
                         Some(x2) => {
-                            if token_string == "<".to_string() {
+                            if token_string == *"<" {
                                 let lt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Lt(token_string),
                                     Arc::clone(&self.label),
@@ -487,7 +485,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(lt);
-                            } else if token_string == ">".to_string() {
+                            } else if token_string == *">" {
                                 let gt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Gt(token_string),
                                     Arc::clone(&self.label),
@@ -496,7 +494,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(gt);
-                            } else if token_string == "<=".to_string() {
+                            } else if token_string == *"<=" {
                                 let le = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Le(token_string),
                                     Arc::clone(&self.label),
@@ -505,7 +503,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(le);
-                            } else if token_string == ">=".to_string() {
+                            } else if token_string == *">=" {
                                 let ge = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ge(token_string),
                                     Arc::clone(&self.label),
@@ -526,7 +524,7 @@ impl Parser {
                 None => expr1 = None,
             }
         }
-        return expr1;
+        expr1
     }
 
     fn expr(&mut self) -> Option<ExprUnion> {
@@ -539,7 +537,7 @@ impl Parser {
                     let expr2 = self.term();
                     match expr2 {
                         Some(x2) => {
-                            if token_string == "+".to_string() {
+                            if token_string == *"+" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Add(token_string),
                                     Arc::clone(&self.temp_count),
@@ -547,7 +545,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(arith);
-                            } else if token_string == "-".to_string() {
+                            } else if token_string == *"-" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Sub(token_string),
                                     Arc::clone(&self.temp_count),
@@ -569,7 +567,7 @@ impl Parser {
                 }
             }
         }
-        return expr1;
+        expr1
     }
 
     fn term(&mut self) -> Option<ExprUnion> {
@@ -582,7 +580,7 @@ impl Parser {
                     let expr2 = self.unary();
                     match expr2 {
                         Some(x2) => {
-                            if token_string == "*".to_string() {
+                            if token_string == *"*" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Mul(token_string),
                                     Arc::clone(&self.temp_count),
@@ -590,7 +588,7 @@ impl Parser {
                                     x2,
                                 )));
                                 expr1 = Some(arith);
-                            } else if token_string == "/".to_string() {
+                            } else if token_string == *"/" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Div(token_string),
                                     Arc::clone(&self.temp_count),
@@ -612,7 +610,7 @@ impl Parser {
                 }
             }
         }
-        return expr1;
+        expr1
     }
 
     fn unary(&mut self) -> Option<ExprUnion> {
@@ -625,10 +623,10 @@ impl Parser {
                     match expr {
                         Some(x) => {
                             let unary = ExprUnion::Unary(Box::new(Unary::new(Token::Sub(s), Arc::clone(&self.temp_count), x)));
-                            return Some(unary);
+                            Some(unary)
                         }
                         None => {
-                            return None;
+                            None
                         }
                     }
                 } else if let Token::Not(s) = t.clone() {
@@ -637,19 +635,19 @@ impl Parser {
                     match expr {
                         Some(x) => {
                             let unary = ExprUnion::Not(Box::new(Not::new(Token::Not(s), Arc::clone(&self.label), Arc::clone(&self.temp_count), x)));
-                            return Some(unary);
+                            Some(unary)
                         }
                         None => {
-                            return None;
+                            None
                         }
                     }
                 } else {
-                    let expr = self.factor();
-                    return expr;
+                    
+                    self.factor()
                 }
             }
             None => {
-                return None;
+                None
             }
         }
     }
@@ -661,53 +659,53 @@ impl Parser {
                 Token::Num(s) => {
                     let constant = ExprUnion::Constant(Box::new(Constant::new(Token::Num(s))));
                     self.lexer.tokens.pop_front();
-                    return Some(constant);
+                    Some(constant)
                 }
                 Token::True(s) => {
                     let constant = ExprUnion::Constant(Box::new(Constant::new(Token::True(s))));
                     self.lexer.tokens.pop_front();
-                    return Some(constant);
+                    Some(constant)
                 }
                 Token::False(s) => {
                     let constant = ExprUnion::Constant(Box::new(Constant::new(Token::False(s))));
                     self.lexer.tokens.pop_front();
-                    return Some(constant);
+                    Some(constant)
                 }
                 Token::Lrb(_) => {
                     self.lexer.tokens.pop_front();
                     let expr = self.boolean();
                     let next = self.lexer.tokens.pop_front();
                     if let Some(Token::Rrb(_)) = next {
-                        return expr;
+                        expr
                     } else {
                         println!("token did not match )");
-                        return None;
+                        None
                     }
                 }
                 Token::Id(s) => {
                     self.lexer.tokens.pop_front();
-                    let symbol = self.symbol_table.get(&s.to_string());
+                    let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
                             if sym.scope > self.current_scope {
-                                println!("{} out of scope", s.to_string());
+                                println!("{} out of scope", s);
                                 return None;
                             }
                             let id = ExprUnion::Id(Box::new(sym.id.clone()));
-                            return Some(id);
+                            Some(id)
                         }
                         None => {
-                            println!("{} undeclared", s.to_string());
-                            return None;
+                            println!("{} undeclared", s);
+                            None
                         }
                     }
                 }
                 _ => {
-                    return None;
+                    None
                 }
             },
             None => {
-                return None;
+                None
             }
         }
     }

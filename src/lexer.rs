@@ -72,7 +72,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new() -> Lexer {
-        return Lexer {
+        Lexer {
             tokens: LinkedList::new(),
             words: HashMap::from([
                 ("true".to_string(), Token::True("true".to_string())),
@@ -82,7 +82,7 @@ impl Lexer {
                 ("while".to_string(), Token::While("while".to_string())),
             ]),
             lineno: 1,
-        };
+        }
     }
     pub fn lex(&mut self, input: &String) {
         let mut it = input.chars().peekable();
@@ -202,22 +202,22 @@ impl Lexer {
                     let mut digitch = it.peek();
 
                     while let Some(&i) = digitch {
-                        if !i.is_digit(10) {
+                        if !i.is_ascii_digit() {
                             if i == '.' {
                                 let mut d = 10.0;
                                 it.next();
                                 digitch = it.peek();
 
                                 while let Some(&j) = digitch {
-                                    if !j.is_digit(10) {
+                                    if !j.is_ascii_digit() {
                                         digitch = None;
                                     } else {
                                         let f = j
                                             .to_string()
                                             .parse::<f64>()
                                             .expect("Character not a digit.");
-                                        n = n + f / d;
-                                        d = d * 10.0;
+                                        n += f / d;
+                                        d *= 10.0;
                                         it.next();
                                         digitch = it.peek();
                                     }
@@ -244,7 +244,7 @@ impl Lexer {
                     it.next();
                     let mut ch = it.peek();
                     while let Some(&i) = ch {
-                        if !i.is_digit(10) && !i.is_alphabetic() {
+                        if !i.is_ascii_digit() && !i.is_alphabetic() {
                             ch = None;
                         } else {
                             s.push(i);
