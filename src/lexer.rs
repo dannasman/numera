@@ -75,16 +75,16 @@ impl Lexer {
         Lexer {
             tokens: LinkedList::new(),
             words: HashMap::from([
-                ("true".to_string(), Token::True("true".to_string())),
-                ("false".to_string(), Token::False("false".to_string())),
-                ("if".to_string(), Token::If("if".to_string())),
-                ("else".to_string(), Token::Else("else".to_string())),
-                ("while".to_string(), Token::While("while".to_string())),
+                (String::from("true"), Token::True(String::from("true"))),
+                (String::from("false"), Token::False(String::from("false"))),
+                (String::from("if"), Token::If(String::from("if"))),
+                (String::from("else"), Token::Else(String::from("else"))),
+                (String::from("while"), Token::While(String::from("while"))),
             ]),
             lineno: 1,
         }
     }
-    pub fn lex(&mut self, input: &String) {
+    pub fn lex(&mut self, input: &str) {
         let mut it = input.chars().peekable();
 
         while let Some(&c) = it.peek() {
@@ -100,96 +100,96 @@ impl Lexer {
                     it.next();
                     let ch = it.peek();
                     if let Some('&') = ch {
-                        self.tokens.push_back(Token::And("&&".to_string()));
+                        self.tokens.push_back(Token::And(String::from("&&")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Id("&".to_string()));
+                        self.tokens.push_back(Token::Id(String::from("&")));
                     };
                 }
                 '|' => {
                     it.next();
                     let ch = it.peek();
                     if let Some('|') = ch {
-                        self.tokens.push_back(Token::Or("||".to_string()));
+                        self.tokens.push_back(Token::Or(String::from("||")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Id("|".to_string()));
+                        self.tokens.push_back(Token::Id(String::from("|")));
                     };
                 }
                 '=' => {
                     it.next();
                     let ch = it.peek();
                     if let Some('=') = ch {
-                        self.tokens.push_back(Token::Eql("==".to_string()));
+                        self.tokens.push_back(Token::Eql(String::from("==")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Asgn("=".to_string()));
+                        self.tokens.push_back(Token::Asgn(String::from("=")));
                     };
                 }
                 '!' => {
                     it.next();
                     let ch = it.peek();
                     if let Some('=') = ch {
-                        self.tokens.push_back(Token::Ne("!=".to_string()));
+                        self.tokens.push_back(Token::Ne(String::from("!=")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Not("!".to_string()));
+                        self.tokens.push_back(Token::Not(String::from("!")));
                     };
                 }
                 '<' => {
                     it.next();
                     let ch = it.peek();
                     if let Some('=') = ch {
-                        self.tokens.push_back(Token::Le("<=".to_string()));
+                        self.tokens.push_back(Token::Le(String::from("<=")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Lt("<".to_string()));
+                        self.tokens.push_back(Token::Lt(String::from("<")));
                     };
                 }
                 '>' => {
                     it.next();
                     let ch = it.peek();
                     if let Some('=') = ch {
-                        self.tokens.push_back(Token::Ge(">=".to_string()));
+                        self.tokens.push_back(Token::Ge(String::from(">=")));
                         it.next();
                     } else {
-                        self.tokens.push_back(Token::Gt(">".to_string()));
+                        self.tokens.push_back(Token::Gt(String::from(">")));
                     };
                 }
                 '+' => {
-                    self.tokens.push_back(Token::Add("+".to_string()));
+                    self.tokens.push_back(Token::Add(String::from("+")));
                     it.next();
                 }
                 '-' => {
-                    self.tokens.push_back(Token::Sub("-".to_string()));
+                    self.tokens.push_back(Token::Sub(String::from("-")));
                     it.next();
                 }
                 '*' => {
-                    self.tokens.push_back(Token::Mul("*".to_string()));
+                    self.tokens.push_back(Token::Mul(String::from("*")));
                     it.next();
                 }
                 '/' => {
-                    self.tokens.push_back(Token::Div("/".to_string()));
+                    self.tokens.push_back(Token::Div(String::from("/")));
                     it.next();
                 }
                 '{' => {
-                    self.tokens.push_back(Token::Lcb("{".to_string()));
+                    self.tokens.push_back(Token::Lcb(String::from("{")));
                     it.next();
                 }
                 '}' => {
-                    self.tokens.push_back(Token::Rcb("}".to_string()));
+                    self.tokens.push_back(Token::Rcb(String::from("}")));
                     it.next();
                 }
                 '(' => {
-                    self.tokens.push_back(Token::Lrb("(".to_string()));
+                    self.tokens.push_back(Token::Lrb(String::from("(")));
                     it.next();
                 }
                 ')' => {
-                    self.tokens.push_back(Token::Rrb(")".to_string()));
+                    self.tokens.push_back(Token::Rrb(String::from(")")));
                     it.next();
                 }
                 ';' => {
-                    self.tokens.push_back(Token::Scol(";".to_string()));
+                    self.tokens.push_back(Token::Scol(String::from(";")));
                     it.next();
                 }
                 '0'..='9' => {
@@ -256,12 +256,12 @@ impl Lexer {
                         Some(t) => self.tokens.push_back(Token::clone(t)),
                         None => {
                             self.tokens.push_back(Token::Id(s.clone()));
-                            self.words.insert(s.clone(), Token::Id(s.clone()));
+                            self.words.insert(s.clone(), Token::Id(s));
                         }
                     }
                 }
                 _ => {
-                    self.tokens.push_back(Token::Id(c.to_string()));
+                    self.tokens.push_back(Token::Id(String::from(c)));
                     it.next();
                 }
             }

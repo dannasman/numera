@@ -47,9 +47,9 @@ impl Parser {
         self.current_scope -= 1;
     }
 
-    pub fn program(&mut self, input: &String) {
+    pub fn program(&mut self, input: &str) {
         self.lexer.lex(input);
-        
+
         let stmt = self.block();
         if let Some(s) = stmt {
             let mut l = self.label.lock().unwrap();
@@ -99,167 +99,149 @@ impl Parser {
                 _ => {
                     let stmt1 = self.stmt();
                     let stmt2 = self.stmts();
-                    let seq = StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
+                    let seq =
+                        StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
                     Some(seq)
                 }
             },
-            None => {
-                None
-            }
+            None => None,
         }
     }
 
     fn stmt(&mut self) -> Option<StmtUnion> {
         let t = self.lexer.tokens.front();
         match t {
-            Some(token) => {
-                match token {
-                    Token::Scol(_) => {
+            Some(token) => match token {
+                Token::Scol(_) => {
+                    self.lexer.tokens.pop_front();
+                    None
+                }
+                Token::Lcb(_) => self.block(),
+                Token::Id(s) => {
+                    if s == "break" {
                         self.lexer.tokens.pop_front();
-                        None
-                    }
-                    Token::Lcb(_) => {
-                        
-                        self.block()
-                    }
-                    Token::Id(s) => {
-                        if s == "break" {
-                            self.lexer.tokens.pop_front();
-                            let next_t = self.lexer.tokens.pop_front();
-                            if let Some(Token::Scol(_)) = next_t {
-                                let enclosing = self.enclosing_stmt.read().unwrap().clone();
-                                let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
-                                Some(break_stmt)
-                            } else {
-                                println!("token did not match ;");
-                                None
-                            }
+                        let next_t = self.lexer.tokens.pop_front();
+                        if let Some(Token::Scol(_)) = next_t {
+                            let enclosing = self.enclosing_stmt.read().unwrap().clone();
+                            let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
+                            Some(break_stmt)
                         } else {
-                            
-                            self.assign()
+                            println!("token did not match ;");
+                            None
                         }
-                    }
-                    Token::If(_) => {
-                        self.lexer.tokens.pop_front();
-                        let mut next_t = self.lexer.tokens.pop_front();
-                        if let Some(Token::Lrb(_)) = next_t {
-                        } else {
-                            println!("token did not match (");
-                            return None;
-                        }
-
-                        let expr = self.boolean();
-
-                        next_t = self.lexer.tokens.pop_front();
-                        if let Some(Token::Rrb(_)) = next_t {
-                        } else {
-                            println!("token did not match )");
-                            return None;
-                        }
-
-                        let stmt1 = self.stmt();
-
-                        let peek = self.lexer.tokens.front();
-                        match peek {
-                            Some(next) => {
-                                if let Token::Else(_) = next {
-                                    self.lexer.tokens.pop_front();
-                                    let stmt2 = self.stmt();
-                                    match stmt1 {
-                                        Some(s1) => match stmt2 {
-                                            Some(s2) => match expr {
-                                                Some(x) => {
-                                                    let else_stmt = StmtUnion::Else(Box::new(
-                                                        Else::new(Arc::clone(&self.label), x, s1, s2),
-                                                    ));
-                                                    Some(else_stmt)
-                                                }
-                                                None => {
-                                                    None
-                                                }
-                                            },
-                                            None => {
-                                                None
-                                            }
-                                        },
-                                        None => {
-                                            None
-                                        }
-                                    }
-                                } else {
-                                    match stmt1 {
-                                        Some(s1) => match expr {
-                                            Some(x) => {
-                                                let if_stmt = StmtUnion::If(Box::new(If::new(
-                                                    Arc::clone(&self.label),
-                                                    x,
-                                                    s1,
-                                                )));
-                                                Some(if_stmt)
-                                            }
-                                            None => {
-                                                None
-                                            }
-                                        },
-                                        None => None,
-                                    }
-                                }
-                            }
-                            None => None,
-                        }
-                    }
-                    Token::While(_) => {
-                        self.lexer.tokens.pop_front();
-                        let while_mutex = Arc::new(Mutex::new(0));
-                        let while_stmt = StmtUnion::While(Box::new(While::new(
-                            Arc::clone(&self.label),
-                            Arc::clone(&while_mutex),
-                        )));
-
-                        let enclosing_read = self.enclosing_stmt.read().unwrap().clone();
-                        let mut enclosing_write = self.enclosing_stmt.write().unwrap();
-                        *enclosing_write = Some(StmtUnion::While(Box::new(While::new(
-                            Arc::clone(&self.label),
-                            Arc::clone(&while_mutex),
-                        ))));
-                        drop(enclosing_write);
-
-                        let mut next_t = self.lexer.tokens.pop_front();
-                        if let Some(Token::Lrb(_)) = next_t {
-                        } else {
-                            println!("token did not match (");
-                            return None;
-                        }
-                        let expr = self.boolean();
-                        next_t = self.lexer.tokens.pop_front();
-                        if let Some(Token::Rrb(_)) = next_t {
-                        } else {
-                            println!("token did not match )");
-                            return None;
-                        }
-
-                        let stmt = self.stmt();
-
-                        match while_stmt {
-                            StmtUnion::While(mut ws) => {
-                                ws.init(expr, stmt);
-                                let mut enclosing_write = self.enclosing_stmt.write().unwrap();
-                                *enclosing_write = enclosing_read;
-                                drop(enclosing_write);
-                                Some(StmtUnion::While(ws))
-                            }
-                            _ => {
-                                println!("failed to initialize while statement");
-                                None
-                            }
-                        }
-                    }
-                    _ => {
-                        
+                    } else {
                         self.assign()
                     }
                 }
-            }
+                Token::If(_) => {
+                    self.lexer.tokens.pop_front();
+                    let mut next_t = self.lexer.tokens.pop_front();
+                    if let Some(Token::Lrb(_)) = next_t {
+                    } else {
+                        println!("token did not match (");
+                        return None;
+                    }
+
+                    let expr = self.boolean();
+
+                    next_t = self.lexer.tokens.pop_front();
+                    if let Some(Token::Rrb(_)) = next_t {
+                    } else {
+                        println!("token did not match )");
+                        return None;
+                    }
+
+                    let stmt1 = self.stmt();
+
+                    let peek = self.lexer.tokens.front();
+                    match peek {
+                        Some(next) => {
+                            if let Token::Else(_) = next {
+                                self.lexer.tokens.pop_front();
+                                let stmt2 = self.stmt();
+                                match stmt1 {
+                                    Some(s1) => match stmt2 {
+                                        Some(s2) => match expr {
+                                            Some(x) => {
+                                                let else_stmt = StmtUnion::Else(Box::new(
+                                                    Else::new(Arc::clone(&self.label), x, s1, s2),
+                                                ));
+                                                Some(else_stmt)
+                                            }
+                                            None => None,
+                                        },
+                                        None => None,
+                                    },
+                                    None => None,
+                                }
+                            } else {
+                                match stmt1 {
+                                    Some(s1) => match expr {
+                                        Some(x) => {
+                                            let if_stmt = StmtUnion::If(Box::new(If::new(
+                                                Arc::clone(&self.label),
+                                                x,
+                                                s1,
+                                            )));
+                                            Some(if_stmt)
+                                        }
+                                        None => None,
+                                    },
+                                    None => None,
+                                }
+                            }
+                        }
+                        None => None,
+                    }
+                }
+                Token::While(_) => {
+                    self.lexer.tokens.pop_front();
+                    let while_mutex = Arc::new(Mutex::new(0));
+                    let while_stmt = StmtUnion::While(Box::new(While::new(
+                        Arc::clone(&self.label),
+                        Arc::clone(&while_mutex),
+                    )));
+
+                    let enclosing_read = self.enclosing_stmt.read().unwrap().clone();
+                    let mut enclosing_write = self.enclosing_stmt.write().unwrap();
+                    *enclosing_write = Some(StmtUnion::While(Box::new(While::new(
+                        Arc::clone(&self.label),
+                        Arc::clone(&while_mutex),
+                    ))));
+                    drop(enclosing_write);
+
+                    let mut next_t = self.lexer.tokens.pop_front();
+                    if let Some(Token::Lrb(_)) = next_t {
+                    } else {
+                        println!("token did not match (");
+                        return None;
+                    }
+                    let expr = self.boolean();
+                    next_t = self.lexer.tokens.pop_front();
+                    if let Some(Token::Rrb(_)) = next_t {
+                    } else {
+                        println!("token did not match )");
+                        return None;
+                    }
+
+                    let stmt = self.stmt();
+
+                    match while_stmt {
+                        StmtUnion::While(mut ws) => {
+                            ws.init(expr, stmt);
+                            let mut enclosing_write = self.enclosing_stmt.write().unwrap();
+                            *enclosing_write = enclosing_read;
+                            drop(enclosing_write);
+                            Some(StmtUnion::While(ws))
+                        }
+                        _ => {
+                            println!("failed to initialize while statement");
+                            None
+                        }
+                    }
+                }
+                _ => self.assign(),
+            },
             None => None,
         }
     }
@@ -288,10 +270,7 @@ impl Parser {
                                 let expr = self.boolean();
                                 match expr {
                                     Some(x) => {
-                                        let stmt = StmtUnion::Set(Box::new(Set::new(
-                                            id,
-                                            x,
-                                        )));
+                                        let stmt = StmtUnion::Set(Box::new(Set::new(id, x)));
                                         let next_t = self.lexer.tokens.pop_front();
                                         if let Some(Token::Scol(_)) = next_t {
                                         } else {
@@ -300,16 +279,12 @@ impl Parser {
                                         }
                                         Some(stmt)
                                     }
-                                    None => {
-                                        None
-                                    }
+                                    None => None,
                                 }
                             }
-                            None => {
-                                None
-                            }
+                            None => None,
                         }
-                    },
+                    }
                     None => {
                         let mut next_t = self.lexer.tokens.pop_front();
                         if let Some(Token::Asgn(_)) = next_t {
@@ -318,15 +293,12 @@ impl Parser {
                             return None;
                         }
                         let expr = self.boolean();
-                        let id = Id::new(Token::Id(s.to_string()));
+                        let id = Id::new(Token::Id(s.clone()));
                         let new_symbol = Symbol::new(self.current_scope, id.clone());
                         self.symbol_table.insert(s, new_symbol);
                         match expr {
                             Some(x) => {
-                                let stmt = StmtUnion::Set(Box::new(Set::new(
-                                    id,
-                                    x,
-                                )));
+                                let stmt = StmtUnion::Set(Box::new(Set::new(id, x)));
                                 next_t = self.lexer.tokens.pop_front();
                                 if let Some(Token::Scol(_)) = next_t {
                                 } else {
@@ -335,13 +307,11 @@ impl Parser {
                                 }
                                 Some(stmt)
                             }
-                            None => {
-                                None
-                            }
+                            None => None,
                         }
                     }
                 }
-            },
+            }
             _ => {
                 println!("token did not match Id");
                 None
@@ -616,33 +586,35 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Unary(Box::new(Unary::new(Token::Sub(s), Arc::clone(&self.temp_count), x)));
+                            let unary = ExprUnion::Unary(Box::new(Unary::new(
+                                Token::Sub(s),
+                                Arc::clone(&self.temp_count),
+                                x,
+                            )));
                             Some(unary)
                         }
-                        None => {
-                            None
-                        }
+                        None => None,
                     }
                 } else if let Token::Not(s) = t.clone() {
                     self.lexer.tokens.pop_front();
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Not(Box::new(Not::new(Token::Not(s), Arc::clone(&self.label), Arc::clone(&self.temp_count), x)));
+                            let unary = ExprUnion::Not(Box::new(Not::new(
+                                Token::Not(s),
+                                Arc::clone(&self.label),
+                                Arc::clone(&self.temp_count),
+                                x,
+                            )));
                             Some(unary)
                         }
-                        None => {
-                            None
-                        }
+                        None => None,
                     }
                 } else {
-                    
                     self.factor()
                 }
             }
-            None => {
-                None
-            }
+            None => None,
         }
     }
 
@@ -694,13 +666,9 @@ impl Parser {
                         }
                     }
                 }
-                _ => {
-                    None
-                }
+                _ => None,
             },
-            None => {
-                None
-            }
+            None => None,
         }
     }
 }

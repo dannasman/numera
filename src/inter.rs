@@ -161,33 +161,37 @@ impl Arith {
     pub fn gen(&self) -> Self {
         let mut e1 = self.expr1.clone();
         let mut e2 = self.expr2.clone();
-        
+
         match e1 {
             ExprUnion::Arith(arith) => {
                 e1 = ExprUnion::Temp(Box::new(arith.reduce()));
-            },
+            }
             ExprUnion::Unary(unary) => {
                 e1 = ExprUnion::Temp(Box::new(unary.reduce()));
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
-        
         match e2 {
             ExprUnion::Arith(arith) => {
                 e2 = ExprUnion::Temp(Box::new(arith.reduce()));
-            },
+            }
             ExprUnion::Unary(unary) => {
                 e2 = ExprUnion::Temp(Box::new(unary.reduce()));
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
         Arith::new(self.op.clone(), Arc::clone(&self.temp_count), e1, e2)
     }
 
     pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        Arith { op, temp_count, expr1, expr2 }
+        Arith {
+            op,
+            temp_count,
+            expr1,
+            expr2,
+        }
     }
 
     fn reduce(&self) -> Temp {
@@ -245,16 +249,20 @@ impl Unary {
         match e {
             ExprUnion::Arith(arith) => {
                 e = ExprUnion::Temp(Box::new(arith.reduce()));
-            },
+            }
             ExprUnion::Unary(unary) => {
                 e = ExprUnion::Temp(Box::new(unary.reduce()));
-            },
-            _ => ()
+            }
+            _ => (),
         }
         Unary::new(self.op.clone(), Arc::clone(&self.temp_count), e)
     }
     pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr: ExprUnion) -> Self {
-        Unary { op, temp_count, expr }
+        Unary {
+            op,
+            temp_count,
+            expr,
+        }
     }
 
     fn reduce(&self) -> Temp {
@@ -339,7 +347,13 @@ impl Or {
         self.emit_label(a);
         temp
     }
-    pub fn new(label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+    pub fn new(
+        label: Arc<Mutex<u32>>,
+        temp_count: Arc<Mutex<u32>>,
+        op: Token,
+        expr1: ExprUnion,
+        expr2: ExprUnion,
+    ) -> Self {
         Or {
             label,
             temp_count,
@@ -401,7 +415,13 @@ impl And {
         self.emit_label(a);
         temp
     }
-    pub fn new(label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, op: Token, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+    pub fn new(
+        label: Arc<Mutex<u32>>,
+        temp_count: Arc<Mutex<u32>>,
+        op: Token,
+        expr1: ExprUnion,
+        expr2: ExprUnion,
+    ) -> Self {
         And {
             label,
             temp_count,
@@ -461,8 +481,18 @@ impl Not {
         self.emit_label(a);
         temp
     }
-    pub fn new(op: Token, label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, expr: ExprUnion) -> Self {
-        Not { op, label, temp_count, expr }
+    pub fn new(
+        op: Token,
+        label: Arc<Mutex<u32>>,
+        temp_count: Arc<Mutex<u32>>,
+        expr: ExprUnion,
+    ) -> Self {
+        Not {
+            op,
+            label,
+            temp_count,
+            expr,
+        }
     }
 }
 
@@ -504,8 +534,20 @@ impl Rel {
         self.emit_label(a);
         temp
     }
-    pub fn new(op: Token, label: Arc<Mutex<u32>>, temp_count: Arc<Mutex<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
-        Rel { op, label, temp_count, expr1, expr2 }
+    pub fn new(
+        op: Token,
+        label: Arc<Mutex<u32>>,
+        temp_count: Arc<Mutex<u32>>,
+        expr1: ExprUnion,
+        expr2: ExprUnion,
+    ) -> Self {
+        Rel {
+            op,
+            label,
+            temp_count,
+            expr1,
+            expr2,
+        }
     }
 }
 
@@ -513,29 +555,33 @@ impl ExprNode for Rel {
     fn jumping(&self, t: u32, f: u32) {
         let mut e1 = self.expr1.clone();
         let mut e2 = self.expr2.clone();
-        
+
         match e1 {
             ExprUnion::Arith(arith) => {
                 e1 = ExprUnion::Temp(Box::new(arith.reduce()));
-            },
+            }
             ExprUnion::Unary(unary) => {
                 e1 = ExprUnion::Temp(Box::new(unary.reduce()));
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
-        
         match e2 {
             ExprUnion::Arith(arith) => {
                 e2 = ExprUnion::Temp(Box::new(arith.reduce()));
-            },
+            }
             ExprUnion::Unary(unary) => {
                 e2 = ExprUnion::Temp(Box::new(unary.reduce()));
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
-        let test = format!("{} {} {}", e1.match_expr(), self.op.clone().value_to_string(), e2.match_expr());
+        let test = format!(
+            "{} {} {}",
+            e1.match_expr(),
+            self.op.clone().value_to_string(),
+            e2.match_expr()
+        );
         self.emit_jumps(test, t, f);
     }
 
@@ -675,10 +721,7 @@ pub struct Set {
 
 impl Set {
     pub fn new(id: Id, expr: ExprUnion) -> Self {
-        Set {
-            id,
-            expr,
-        }
+        Set { id, expr }
     }
 }
 
