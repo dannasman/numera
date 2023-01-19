@@ -259,7 +259,7 @@ impl Unary {
 
     fn reduce(&self) -> Temp {
         let temp = Temp::new(Arc::clone(&self.temp_count));
-        self.emit(format!("{} = {}", temp.to_string(), self.to_string()));
+        self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         return temp;
     }
 }
