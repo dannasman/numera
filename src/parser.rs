@@ -267,90 +267,84 @@ impl Parser {
     fn assign(&mut self) -> Option<StmtUnion> {
         let t = self.lexer.tokens.pop_front();
         match t {
-            Some(token) => match token {
-                Token::Id(s) => {
-                    let symbol = self.symbol_table.get_mut(&s.to_string());
-                    match &symbol {
-                        Some(sym) => {
-                            if sym.scope > self.current_scope {
-                                println!("{} out of scope", s.to_string());
-                                return None;
-                            }
-                            let peek = self.lexer.tokens.front();
-                            match peek {
-                                Some(ptoken) => {
-                                    if let Token::Asgn(_) = ptoken {
-                                    } else {
-                                        println!("token did not match =");
-                                        return None;
-                                    }
-                                    self.lexer.tokens.pop_front();
-                                    let id = sym.id.clone();
-                                    let expr = self.boolean();
-                                    match expr {
-                                        Some(x) => {
-                                            let stmt = StmtUnion::Set(Box::new(Set::new(
-                                                id,
-                                                x,
-                                            )));
-                                            let next_t = self.lexer.tokens.pop_front();
-                                            if let Some(Token::Scol(_)) = next_t {
-                                            } else {
-                                                println!("token did not match ;");
-                                                return None;
-                                            }
-                                            return Some(stmt);
-                                        }
-                                        None => {
+            Some(Token::Id(s)) => {
+                let symbol = self.symbol_table.get_mut(&s);
+                match &symbol {
+                    Some(sym) => {
+                        if sym.scope > self.current_scope {
+                            println!("{} out of scope", s);
+                            return None;
+                        }
+                        let peek = self.lexer.tokens.front();
+                        match peek {
+                            Some(ptoken) => {
+                                if let Token::Asgn(_) = ptoken {
+                                } else {
+                                    println!("token did not match =");
+                                    return None;
+                                }
+                                self.lexer.tokens.pop_front();
+                                let id = sym.id.clone();
+                                let expr = self.boolean();
+                                match expr {
+                                    Some(x) => {
+                                        let stmt = StmtUnion::Set(Box::new(Set::new(
+                                            id,
+                                            x,
+                                        )));
+                                        let next_t = self.lexer.tokens.pop_front();
+                                        if let Some(Token::Scol(_)) = next_t {
+                                        } else {
+                                            println!("token did not match ;");
                                             return None;
                                         }
+                                        Some(stmt)
+                                    }
+                                    None => {
+                                        None
                                     }
                                 }
-                                None => {
-                                    return None;
-                                }
+                            }
+                            None => {
+                                None
                             }
                         }
-                        None => {
-                            let mut next_t = self.lexer.tokens.pop_front();
-                            if let Some(Token::Asgn(_)) = next_t {
-                            } else {
-                                println!("{} undeclared", s.to_string());
-                                return None;
-                            }
-                            let expr = self.boolean();
-                            let id = Id::new(Token::Id(s.to_string()));
-                            let new_symbol = Symbol::new(self.current_scope, id.clone());
-                            self.symbol_table.insert(s.to_string(), new_symbol);
-                            match expr {
-                                Some(x) => {
-                                    let stmt = StmtUnion::Set(Box::new(Set::new(
-                                        id,
-                                        x,
-                                    )));
-                                    next_t = self.lexer.tokens.pop_front();
-                                    if let Some(Token::Scol(_)) = next_t {
-                                    } else {
-                                        println!("token did not match ;");
-                                        return None;
-                                    }
-                                    return Some(stmt);
-                                }
-                                None => {
+                    },
+                    None => {
+                        let mut next_t = self.lexer.tokens.pop_front();
+                        if let Some(Token::Asgn(_)) = next_t {
+                        } else {
+                            println!("{} undeclared", s);
+                            return None;
+                        }
+                        let expr = self.boolean();
+                        let id = Id::new(Token::Id(s.to_string()));
+                        let new_symbol = Symbol::new(self.current_scope, id.clone());
+                        self.symbol_table.insert(s, new_symbol);
+                        match expr {
+                            Some(x) => {
+                                let stmt = StmtUnion::Set(Box::new(Set::new(
+                                    id,
+                                    x,
+                                )));
+                                next_t = self.lexer.tokens.pop_front();
+                                if let Some(Token::Scol(_)) = next_t {
+                                } else {
+                                    println!("token did not match ;");
                                     return None;
                                 }
+                                Some(stmt)
+                            }
+                            None => {
+                                None
                             }
                         }
                     }
                 }
-                _ => {
-                    println!("token did not match Id");
-                    return None;
-                }
             },
-            None => {
+            _ => {
                 println!("token did not match Id");
-                return None;
+                None
             }
         }
     }
