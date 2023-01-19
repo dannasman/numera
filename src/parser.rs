@@ -294,7 +294,6 @@ impl Parser {
                                             let stmt = StmtUnion::Set(Box::new(Set::new(
                                                 id,
                                                 x,
-                                                Arc::clone(&self.temp_count),
                                             )));
                                             let next_t = self.lexer.tokens.pop_front();
                                             if let Some(Token::Scol(_)) = next_t {
@@ -330,7 +329,6 @@ impl Parser {
                                     let stmt = StmtUnion::Set(Box::new(Set::new(
                                         id,
                                         x,
-                                        Arc::clone(&self.temp_count),
                                     )));
                                     next_t = self.lexer.tokens.pop_front();
                                     if let Some(Token::Scol(_)) = next_t {
@@ -371,6 +369,7 @@ impl Parser {
                         Some(x2) => {
                             let or = ExprUnion::Or(Box::new(Or::new(
                                 Arc::clone(&self.label),
+                                Arc::clone(&self.temp_count),
                                 Token::Or(token_string),
                                 x1,
                                 x2,
@@ -402,6 +401,7 @@ impl Parser {
                         Some(x2) => {
                             let and = ExprUnion::And(Box::new(And::new(
                                 Arc::clone(&self.label),
+                                Arc::clone(&self.temp_count),
                                 Token::And(token_string),
                                 x1,
                                 x2,
@@ -434,6 +434,8 @@ impl Parser {
                             if token_string == "==".to_string() {
                                 let eql = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Eql(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -441,6 +443,8 @@ impl Parser {
                             } else if token_string == "!=".to_string() {
                                 let ne = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ne(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -477,6 +481,8 @@ impl Parser {
                             if token_string == "<".to_string() {
                                 let lt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Lt(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -484,6 +490,8 @@ impl Parser {
                             } else if token_string == ">".to_string() {
                                 let gt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Gt(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -491,6 +499,8 @@ impl Parser {
                             } else if token_string == "<=".to_string() {
                                 let le = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Le(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -498,6 +508,8 @@ impl Parser {
                             } else if token_string == ">=".to_string() {
                                 let ge = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ge(token_string),
+                                    Arc::clone(&self.label),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -530,6 +542,7 @@ impl Parser {
                             if token_string == "+".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Add(token_string),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -537,6 +550,7 @@ impl Parser {
                             } else if token_string == "-".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Sub(token_string),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -571,6 +585,7 @@ impl Parser {
                             if token_string == "*".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Mul(token_string),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -578,6 +593,7 @@ impl Parser {
                             } else if token_string == "/".to_string() {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Div(token_string),
+                                    Arc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -608,7 +624,7 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Unary(Box::new(Unary::new(Token::Sub(s), x)));
+                            let unary = ExprUnion::Unary(Box::new(Unary::new(Token::Sub(s), Arc::clone(&self.temp_count), x)));
                             return Some(unary);
                         }
                         None => {
@@ -620,7 +636,7 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Not(Box::new(Not::new(Token::Not(s), x)));
+                            let unary = ExprUnion::Not(Box::new(Not::new(Token::Not(s), Arc::clone(&self.label), Arc::clone(&self.temp_count), x)));
                             return Some(unary);
                         }
                         None => {
