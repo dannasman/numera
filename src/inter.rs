@@ -55,7 +55,7 @@ pub enum ExprUnion {
 }
 
 impl ExprUnion {
-    fn match_expr(&self) -> String {
+    fn gen_expr_string(&self) -> String {
         match self {
             ExprUnion::Id(id) => id.to_string(),
             ExprUnion::Arith(arith) => arith.gen().to_string(),
@@ -202,8 +202,8 @@ impl ExprNode for Arith {
         self.emit_jumps(self.to_string(), t, f);
     }
     fn to_string(&self) -> String {
-        let e1 = self.expr1.match_expr();
-        let e2 = self.expr2.match_expr();
+        let e1 = self.expr1.gen_expr_string();
+        let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
@@ -271,7 +271,7 @@ impl ExprNode for Unary {
     }
 
     fn to_string(&self) -> String {
-        let e = self.expr.match_expr();
+        let e = self.expr.gen_expr_string();
         format!("{} {}", self.op.clone().value_to_string(), e)
     }
 }
@@ -371,8 +371,8 @@ impl ExprNode for Or {
     }
 
     fn to_string(&self) -> String {
-        let e1 = self.expr1.match_expr();
-        let e2 = self.expr2.match_expr();
+        let e1 = self.expr1.gen_expr_string();
+        let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
@@ -439,8 +439,8 @@ impl ExprNode for And {
     }
 
     fn to_string(&self) -> String {
-        let e1 = self.expr1.match_expr();
-        let e2 = self.expr2.match_expr();
+        let e1 = self.expr1.gen_expr_string();
+        let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
@@ -492,7 +492,7 @@ impl ExprNode for Not {
     }
 
     fn to_string(&self) -> String {
-        let e = self.expr.match_expr();
+        let e = self.expr.gen_expr_string();
         format!("{} {}", self.op.clone().value_to_string(), e)
     }
 }
@@ -568,16 +568,16 @@ impl ExprNode for Rel {
 
         let test = format!(
             "{} {} {}",
-            e1.match_expr(),
+            e1.gen_expr_string(),
             self.op.clone().value_to_string(),
-            e2.match_expr()
+            e2.gen_expr_string()
         );
         self.emit_jumps(test, t, f);
     }
 
     fn to_string(&self) -> String {
-        let e1 = self.expr1.match_expr();
-        let e2 = self.expr2.match_expr();
+        let e1 = self.expr1.gen_expr_string();
+        let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
     }
 }
@@ -717,7 +717,7 @@ impl Set {
 
 impl StmtNode for Set {
     fn gen(&self, _b: u32, _a: u32) {
-        let e = self.expr.match_expr();
+        let e = self.expr.gen_expr_string();
         self.emit(format!("{} = {}", self.id.to_string(), e));
     }
 }
