@@ -57,11 +57,11 @@ pub enum ExprUnion {
 impl ExprUnion {
     fn match_expr(&self) -> String {
         match self {
-            ExprUnion::Id(id) => return id.gen().to_string(),
+            ExprUnion::Id(id) => id.to_string(),
             ExprUnion::Arith(arith) => arith.gen().to_string(),
-            ExprUnion::Temp(temp) => return temp.gen().to_string(),
+            ExprUnion::Temp(temp) => temp.to_string(),
             ExprUnion::Unary(unary) => unary.gen().to_string(),
-            ExprUnion::Constant(constant) => return constant.gen().to_string(),
+            ExprUnion::Constant(constant) => constant.to_string(),
             ExprUnion::Or(or) => or.gen().to_string(),
             ExprUnion::And(and) => and.gen().to_string(),
             ExprUnion::Not(not) => not.gen().to_string(),
@@ -134,10 +134,6 @@ pub struct Id {
 }
 
 impl Id {
-    pub fn gen(&self) -> &Self {
-        self
-    }
-
     pub fn new(token: Token) -> Self {
         Id { token }
     }
@@ -218,9 +214,6 @@ pub struct Temp {
 }
 
 impl Temp {
-    pub fn gen(&self) -> &Self {
-        self
-    }
     pub fn new(temp_count: Arc<Mutex<u32>>) -> Self {
         let mut c = temp_count.lock().unwrap();
         *c += 1;
@@ -289,9 +282,6 @@ pub struct Constant {
 }
 
 impl Constant {
-    pub fn gen(&self) -> &Self {
-        self
-    }
     pub fn new(constant: Token) -> Self {
         Constant { constant }
     }
