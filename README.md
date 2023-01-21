@@ -39,3 +39,25 @@ L5:
 L2:
 
 ```
+## Grammar
+Grammar of the language:
+```
+program     ->      block
+block       ->      { stmts }
+stmts       ->      stmts stmt | ε
+stmt        ->      id = bool;
+            |       if (bool) stmt
+            |       if (bool) stmt else stmt
+            |       while (bool) stmt
+            |       break;
+            |       block
+bool        ->      bool || join | join
+join        ->      join && equality | equality
+equality    ->      equality == rel | equality != rel | rel
+rel         ->      expr < expr | expr <= expr | expr >= expr |
+                    expr > expr | expr
+expr        ->      expr + term | expr - term | term
+term        ->      term * unary | term / unary | unary
+unary       ->      ! unary | - unary | factor
+factor      ->      ( bool ) | id | num | true | false
+```
