@@ -4,7 +4,8 @@ use super::inter::{
 };
 use super::lexer::{Lexer, Token};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Debug, Clone)]
 struct Symbol {
@@ -20,22 +21,22 @@ impl Symbol {
 
 pub struct Parser {
     current_scope: u32,
-    enclosing_stmt: Arc<RwLock<Option<StmtUnion>>>,
-    label: Arc<Mutex<u32>>,
+    enclosing_stmt: Rc<RefCell<Option<StmtUnion>>>,
+    label: Rc<RefCell<u32>>,
     lexer: Lexer,
     symbol_table: HashMap<String, Symbol>,
-    temp_count: Arc<Mutex<u32>>,
+    temp_count: Rc<RefCell<u32>>,
 }
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Self {
         Parser {
             current_scope: 0,
-            enclosing_stmt: Arc::new(RwLock::new(None)),
-            label: Arc::new(Mutex::new(0)),
+            enclosing_stmt: Rc::new(RefCell::new(None)),
+            label: Rc::new(RefCell::new(0)),
             lexer,
             symbol_table: HashMap::new(),
-            temp_count: Arc::new(Mutex::new(0)),
+            temp_count: Rc::new(RefCell::new(0)),
         }
     }
 
@@ -52,7 +53,7 @@ impl Parser {
 
         let stmt = self.block();
         if let Some(s) = stmt {
-            let mut l = self.label.lock().unwrap();
+            let mut l = self.label.borrow_mut();
             *l += 1;
             let begin = *l;
             *l += 1;
@@ -100,7 +101,7 @@ impl Parser {
                     let stmt1 = self.stmt();
                     let stmt2 = self.stmts();
                     let seq =
-                        StmtUnion::Seq(Box::new(Seq::new(Arc::clone(&self.label), stmt1, stmt2)));
+                        StmtUnion::Seq(Box::new(Seq::new(Rc::clone(&self.label), stmt1, stmt2)));
                     Some(seq)
                 }
             },
@@ -122,7 +123,7 @@ impl Parser {
                         self.lexer.tokens.pop_front();
                         let next_t = self.lexer.tokens.pop_front();
                         if let Some(Token::Scol(_)) = next_t {
-                            let enclosing = self.enclosing_stmt.read().unwrap().clone();
+                            let enclosing = self.enclosing_stmt.borrow().to_owned();
                             let break_stmt = StmtUnion::Break(Box::new(Break::new(enclosing)));
                             Some(break_stmt)
                         } else {
@@ -164,7 +165,7 @@ impl Parser {
                                         Some(s2) => match expr {
                                             Some(x) => {
                                                 let else_stmt = StmtUnion::Else(Box::new(
-                                                    Else::new(Arc::clone(&self.label), x, s1, s2),
+                                                    Else::new(Rc::clone(&self.label), x, s1, s2),
                                                 ));
                                                 Some(else_stmt)
                                             }
@@ -179,7 +180,7 @@ impl Parser {
                                     Some(s1) => match expr {
                                         Some(x) => {
                                             let if_stmt = StmtUnion::If(Box::new(If::new(
-                                                Arc::clone(&self.label),
+                                                Rc::clone(&self.label),
                                                 x,
                                                 s1,
                                             )));
@@ -196,17 +197,17 @@ impl Parser {
                 }
                 Token::While(_) => {
                     self.lexer.tokens.pop_front();
-                    let while_mutex = Arc::new(Mutex::new(0));
+                    let while_cell = Rc::new(RefCell::new(0));
                     let while_stmt = StmtUnion::While(Box::new(While::new(
-                        Arc::clone(&self.label),
-                        Arc::clone(&while_mutex),
+                        Rc::clone(&self.label),
+                        Rc::clone(&while_cell),
                     )));
 
-                    let enclosing_read = self.enclosing_stmt.read().unwrap().clone();
-                    let mut enclosing_write = self.enclosing_stmt.write().unwrap();
+                    let enclosing_read = self.enclosing_stmt.borrow().to_owned();
+                    let mut enclosing_write = self.enclosing_stmt.borrow_mut();
                     *enclosing_write = Some(StmtUnion::While(Box::new(While::new(
-                        Arc::clone(&self.label),
-                        Arc::clone(&while_mutex),
+                        Rc::clone(&self.label),
+                        Rc::clone(&while_cell),
                     ))));
                     drop(enclosing_write);
 
@@ -229,7 +230,7 @@ impl Parser {
                     match while_stmt {
                         StmtUnion::While(mut ws) => {
                             ws.init(expr, stmt);
-                            let mut enclosing_write = self.enclosing_stmt.write().unwrap();
+                            let mut enclosing_write = self.enclosing_stmt.borrow_mut();
                             *enclosing_write = enclosing_read;
                             drop(enclosing_write);
                             Some(StmtUnion::While(ws))
@@ -330,8 +331,8 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let or = ExprUnion::Or(Box::new(Or::new(
-                                Arc::clone(&self.label),
-                                Arc::clone(&self.temp_count),
+                                Rc::clone(&self.label),
+                                Rc::clone(&self.temp_count),
                                 Token::Or(token_string),
                                 x1,
                                 x2,
@@ -362,8 +363,8 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let and = ExprUnion::And(Box::new(And::new(
-                                Arc::clone(&self.label),
-                                Arc::clone(&self.temp_count),
+                                Rc::clone(&self.label),
+                                Rc::clone(&self.temp_count),
                                 Token::And(token_string),
                                 x1,
                                 x2,
@@ -396,8 +397,8 @@ impl Parser {
                             if token_string == *"==" {
                                 let eql = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Eql(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -405,8 +406,8 @@ impl Parser {
                             } else if token_string == *"!=" {
                                 let ne = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ne(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -443,8 +444,8 @@ impl Parser {
                             if token_string == *"<" {
                                 let lt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Lt(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -452,8 +453,8 @@ impl Parser {
                             } else if token_string == *">" {
                                 let gt = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Gt(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -461,8 +462,8 @@ impl Parser {
                             } else if token_string == *"<=" {
                                 let le = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Le(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -470,8 +471,8 @@ impl Parser {
                             } else if token_string == *">=" {
                                 let ge = ExprUnion::Rel(Box::new(Rel::new(
                                     Token::Ge(token_string),
-                                    Arc::clone(&self.label),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.label),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -504,7 +505,7 @@ impl Parser {
                             if token_string == *"+" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Add(token_string),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -512,7 +513,7 @@ impl Parser {
                             } else if token_string == *"-" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Sub(token_string),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -547,7 +548,7 @@ impl Parser {
                             if token_string == *"*" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Mul(token_string),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -555,7 +556,7 @@ impl Parser {
                             } else if token_string == *"/" {
                                 let arith = ExprUnion::Arith(Box::new(Arith::new(
                                     Token::Div(token_string),
-                                    Arc::clone(&self.temp_count),
+                                    Rc::clone(&self.temp_count),
                                     x1,
                                     x2,
                                 )));
@@ -588,7 +589,7 @@ impl Parser {
                         Some(x) => {
                             let unary = ExprUnion::Unary(Box::new(Unary::new(
                                 Token::Sub(s),
-                                Arc::clone(&self.temp_count),
+                                Rc::clone(&self.temp_count),
                                 x,
                             )));
                             Some(unary)
@@ -602,8 +603,8 @@ impl Parser {
                         Some(x) => {
                             let unary = ExprUnion::Not(Box::new(Not::new(
                                 Token::Not(s),
-                                Arc::clone(&self.label),
-                                Arc::clone(&self.temp_count),
+                                Rc::clone(&self.label),
+                                Rc::clone(&self.temp_count),
                                 x,
                             )));
                             Some(unary)

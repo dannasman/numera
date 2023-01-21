@@ -1,5 +1,6 @@
 use super::lexer::Token;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 pub trait ExprNode {
     fn emit_label(&self, i: u32) {
@@ -98,9 +99,9 @@ impl StmtUnion {
     fn after(&self) -> u32 {
         match self {
             StmtUnion::While(while_stmt) => {
-                let after_lock = while_stmt.after.lock().unwrap();
-                let after = *after_lock;
-                drop(after_lock);
+                let after_borrow= while_stmt.after.borrow_mut();
+                let after = *after_borrow;
+                drop(after_borrow);
                 after
             }
             _ => 0,
@@ -148,7 +149,7 @@ impl ExprNode for Id {
 #[derive(Debug, Clone)]
 pub struct Arith {
     op: Token,
-    temp_count: Arc<Mutex<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     expr1: ExprUnion,
     expr2: ExprUnion,
 }
@@ -178,10 +179,10 @@ impl Arith {
             _ => (),
         }
 
-        Arith::new(self.op.clone(), Arc::clone(&self.temp_count), e1, e2)
+        Arith::new(self.op.clone(), Rc::clone(&self.temp_count), e1, e2)
     }
 
-    pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+    pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
         Arith {
             op,
             temp_count,
@@ -191,7 +192,7 @@ impl Arith {
     }
 
     fn reduce(&self) -> Temp {
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         temp
     }
@@ -214,8 +215,8 @@ pub struct Temp {
 }
 
 impl Temp {
-    pub fn new(temp_count: Arc<Mutex<u32>>) -> Self {
-        let mut c = temp_count.lock().unwrap();
+    pub fn new(temp_count: Rc<RefCell<u32>>) -> Self {
+        let mut c = temp_count.borrow_mut();
         *c += 1;
         let number = *c;
         drop(c);
@@ -232,7 +233,7 @@ impl ExprNode for Temp {
 #[derive(Debug, Clone)]
 pub struct Unary {
     op: Token,
-    temp_count: Arc<Mutex<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     expr: ExprUnion,
 }
 
@@ -248,9 +249,9 @@ impl Unary {
             }
             _ => (),
         }
-        Unary::new(self.op.clone(), Arc::clone(&self.temp_count), e)
+        Unary::new(self.op.clone(), Rc::clone(&self.temp_count), e)
     }
-    pub fn new(op: Token, temp_count: Arc<Mutex<u32>>, expr: ExprUnion) -> Self {
+    pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr: ExprUnion) -> Self {
         Unary {
             op,
             temp_count,
@@ -259,7 +260,7 @@ impl Unary {
     }
 
     fn reduce(&self) -> Temp {
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         temp
     }
@@ -311,8 +312,8 @@ impl ExprNode for Constant {
 
 #[derive(Debug, Clone)]
 pub struct Or {
-    label: Arc<Mutex<u32>>,
-    temp_count: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
@@ -321,14 +322,14 @@ pub struct Or {
 impl Or {
     //used by logical expressions
     fn gen(&self) -> Temp {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let f = *l;
         *l += 1;
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -338,8 +339,8 @@ impl Or {
         temp
     }
     pub fn new(
-        label: Arc<Mutex<u32>>,
-        temp_count: Arc<Mutex<u32>>,
+        label: Rc<RefCell<u32>>,
+        temp_count: Rc<RefCell<u32>>,
         op: Token,
         expr1: ExprUnion,
         expr2: ExprUnion,
@@ -358,7 +359,7 @@ impl ExprNode for Or {
     fn jumping(&self, t: u32, f: u32) {
         let mut new_label = t;
         if t == 0 {
-            let mut l = self.label.lock().unwrap();
+            let mut l = self.label.borrow_mut();
             *l += 1;
             new_label = *l;
             drop(l);
@@ -379,8 +380,8 @@ impl ExprNode for Or {
 
 #[derive(Debug, Clone)]
 pub struct And {
-    label: Arc<Mutex<u32>>,
-    temp_count: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
@@ -389,14 +390,14 @@ pub struct And {
 impl And {
     //used by logical expressions
     fn gen(&self) -> Temp {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let f = *l;
         *l += 1;
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -406,8 +407,8 @@ impl And {
         temp
     }
     pub fn new(
-        label: Arc<Mutex<u32>>,
-        temp_count: Arc<Mutex<u32>>,
+        label: Rc<RefCell<u32>>,
+        temp_count: Rc<RefCell<u32>>,
         op: Token,
         expr1: ExprUnion,
         expr2: ExprUnion,
@@ -426,7 +427,7 @@ impl ExprNode for And {
     fn jumping(&self, t: u32, f: u32) {
         let mut new_label = f;
         if f == 0 {
-            let mut l = self.label.lock().unwrap();
+            let mut l = self.label.borrow_mut();
             *l += 1;
             new_label = *l;
             drop(l);
@@ -448,21 +449,21 @@ impl ExprNode for And {
 #[derive(Debug, Clone)]
 pub struct Not {
     op: Token,
-    label: Arc<Mutex<u32>>,
-    temp_count: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     expr: ExprUnion,
 }
 
 impl Not {
     fn gen(&self) -> Temp {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let f = *l;
         *l += 1;
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -473,8 +474,8 @@ impl Not {
     }
     pub fn new(
         op: Token,
-        label: Arc<Mutex<u32>>,
-        temp_count: Arc<Mutex<u32>>,
+        label: Rc<RefCell<u32>>,
+        temp_count: Rc<RefCell<u32>>,
         expr: ExprUnion,
     ) -> Self {
         Not {
@@ -500,22 +501,22 @@ impl ExprNode for Not {
 #[derive(Debug, Clone)]
 pub struct Rel {
     op: Token,
-    label: Arc<Mutex<u32>>,
-    temp_count: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
+    temp_count: Rc<RefCell<u32>>,
     expr1: ExprUnion,
     expr2: ExprUnion,
 }
 
 impl Rel {
     fn gen(&self) -> Temp {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let f = *l;
         *l += 1;
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Arc::clone(&self.temp_count));
+        let temp = Temp::new(Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -526,8 +527,8 @@ impl Rel {
     }
     pub fn new(
         op: Token,
-        label: Arc<Mutex<u32>>,
-        temp_count: Arc<Mutex<u32>>,
+        label: Rc<RefCell<u32>>,
+        temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
         expr2: ExprUnion,
     ) -> Self {
@@ -584,20 +585,20 @@ impl ExprNode for Rel {
 
 #[derive(Debug, Clone)]
 pub struct If {
-    label: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
     expr: ExprUnion,
     stmt: StmtUnion,
 }
 
 impl If {
-    pub fn new(label: Arc<Mutex<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
+    pub fn new(label: Rc<RefCell<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
         If { label, expr, stmt }
     }
 }
 
 impl StmtNode for If {
     fn gen(&self, _b: u32, a: u32) {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let new_label = *l;
         drop(l);
@@ -609,7 +610,7 @@ impl StmtNode for If {
 
 #[derive(Debug, Clone)]
 pub struct Else {
-    label: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
     expr: ExprUnion,
     stmt1: StmtUnion,
     stmt2: StmtUnion,
@@ -617,7 +618,7 @@ pub struct Else {
 
 impl Else {
     pub fn new(
-        label: Arc<Mutex<u32>>,
+        label: Rc<RefCell<u32>>,
         expr: ExprUnion,
         stmt1: StmtUnion,
         stmt2: StmtUnion,
@@ -633,7 +634,7 @@ impl Else {
 
 impl StmtNode for Else {
     fn gen(&self, _b: u32, a: u32) {
-        let mut l = self.label.lock().unwrap();
+        let mut l = self.label.borrow_mut();
         *l += 1;
         let new_label1 = *l;
         *l += 1;
@@ -652,14 +653,14 @@ impl StmtNode for Else {
 
 #[derive(Debug, Clone)]
 pub struct While {
-    label: Arc<Mutex<u32>>,
-    after: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
+    after: Rc<RefCell<u32>>,
     expr: Option<ExprUnion>,
     stmt: Option<StmtUnion>,
 }
 
 impl While {
-    pub fn new(label: Arc<Mutex<u32>>, after: Arc<Mutex<u32>>) -> Self {
+    pub fn new(label: Rc<RefCell<u32>>, after: Rc<RefCell<u32>>) -> Self {
         While {
             label,
             after,
@@ -678,13 +679,13 @@ impl StmtNode for While {
         match &self.expr {
             Some(e) => match &self.stmt {
                 Some(s) => {
-                    let mut after_lock = self.after.lock().unwrap();
+                    let mut after_lock = self.after.borrow_mut();
                     *after_lock = a;
                     drop(after_lock);
 
                     e.jumping(0, a);
 
-                    let mut l = self.label.lock().unwrap();
+                    let mut l = self.label.borrow_mut();
                     *l += 1;
                     let new_label = *l;
                     drop(l);
@@ -724,13 +725,13 @@ impl StmtNode for Set {
 
 #[derive(Debug, Clone)]
 pub struct Seq {
-    label: Arc<Mutex<u32>>,
+    label: Rc<RefCell<u32>>,
     stmt1: Option<StmtUnion>,
     stmt2: Option<StmtUnion>,
 }
 
 impl Seq {
-    pub fn new(label: Arc<Mutex<u32>>, stmt1: Option<StmtUnion>, stmt2: Option<StmtUnion>) -> Self {
+    pub fn new(label: Rc<RefCell<u32>>, stmt1: Option<StmtUnion>, stmt2: Option<StmtUnion>) -> Self {
         Seq {
             label,
             stmt1,
@@ -744,7 +745,7 @@ impl StmtNode for Seq {
         match &self.stmt1 {
             Some(s1) => match &self.stmt2 {
                 Some(s2) => {
-                    let mut l = self.label.lock().unwrap();
+                    let mut l = self.label.borrow_mut();
                     *l += 1;
                     let new_label = *l;
                     drop(l);
