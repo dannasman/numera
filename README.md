@@ -37,6 +37,7 @@ L5:
 	x = x + 1
 	goto L3
 L2:
+Code compiled in 85.398µs
 
 ```
 ## Grammar
