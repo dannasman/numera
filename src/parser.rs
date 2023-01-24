@@ -7,24 +7,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-#[derive(Debug, Clone)]
-struct Symbol {
-    scope: u32,
-    id: Id,
-}
-
-impl Symbol {
-    pub fn new(scope: u32, id: Id) -> Self {
-        Symbol { scope, id }
-    }
-}
-
 pub struct Parser {
     current_scope: u32,
     enclosing_stmt: Rc<RefCell<Option<StmtUnion>>>,
     label: Rc<RefCell<u32>>,
     lexer: Lexer,
-    symbol_table: HashMap<String, Symbol>,
+    symbol_table: HashMap<String, Id>,
     temp_count: Rc<RefCell<u32>>,
 }
 
@@ -252,12 +240,8 @@ impl Parser {
         match t {
             Some(Token::Id(s)) => {
                 let symbol = self.symbol_table.get_mut(&s);
-                match &symbol {
+                match symbol {
                     Some(sym) => {
-                        if sym.scope > self.current_scope {
-                            println!("{} out of scope", s);
-                            return None;
-                        }
                         let peek = self.lexer.tokens.front();
                         match peek {
                             Some(ptoken) => {
@@ -267,7 +251,7 @@ impl Parser {
                                     return None;
                                 }
                                 self.lexer.tokens.pop_front();
-                                let id = sym.id.clone();
+                                let id = sym.to_owned();
                                 let expr = self.boolean();
                                 match expr {
                                     Some(x) => {
@@ -295,8 +279,7 @@ impl Parser {
                         }
                         let expr = self.boolean();
                         let id = Id::new(Token::Id(s.clone()));
-                        let new_symbol = Symbol::new(self.current_scope, id.clone());
-                        self.symbol_table.insert(s, new_symbol);
+                        self.symbol_table.insert(s, id.clone());
                         match expr {
                             Some(x) => {
                                 let stmt = StmtUnion::Set(Box::new(Set::new(id, x)));
@@ -654,11 +637,7 @@ impl Parser {
                     let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
-                            if sym.scope > self.current_scope {
-                                println!("{} out of scope", s);
-                                return None;
-                            }
-                            let id = ExprUnion::Id(Box::new(sym.id.clone()));
+                            let id = ExprUnion::Id(Box::new(sym.clone()));
                             Some(id)
                         }
                         None => {
