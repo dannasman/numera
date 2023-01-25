@@ -1,4 +1,4 @@
-use std::collections::{HashMap, LinkedList};
+use std::collections::{HashMap, LinkedList, VecDeque};
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -67,7 +67,8 @@ impl Token {
 pub struct Lexer {
     pub tokens: LinkedList<Token>,
     words: HashMap<String, Token>,
-    lineno: u32,
+    current_line: u32,
+    pub lines: VecDeque<u32>, //safe line of token i to lines[i-1]
 }
 
 impl Lexer {
@@ -81,7 +82,8 @@ impl Lexer {
                 (String::from("else"), Token::Else(String::from("else"))),
                 (String::from("while"), Token::While(String::from("while"))),
             ]),
-            lineno: 1,
+            current_line: 1,
+            lines: VecDeque::new(),
         }
     }
     pub fn lex(&mut self, input: &str) {
@@ -93,7 +95,7 @@ impl Lexer {
                     it.next();
                 }
                 '\n' => {
-                    self.lineno += 1;
+                    self.current_line += 1;
                     it.next();
                 }
                 '&' => {
@@ -105,6 +107,7 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Id(String::from("&")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '|' => {
                     it.next();
@@ -115,6 +118,7 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Id(String::from("|")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '=' => {
                     it.next();
@@ -125,6 +129,7 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Asgn(String::from("=")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '!' => {
                     it.next();
@@ -135,6 +140,7 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Not(String::from("!")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '<' => {
                     it.next();
@@ -145,6 +151,7 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Lt(String::from("<")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '>' => {
                     it.next();
@@ -155,41 +162,51 @@ impl Lexer {
                     } else {
                         self.tokens.push_back(Token::Gt(String::from(">")));
                     };
+                    self.lines.push_back(self.current_line);
                 }
                 '+' => {
                     self.tokens.push_back(Token::Add(String::from("+")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '-' => {
                     self.tokens.push_back(Token::Sub(String::from("-")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '*' => {
                     self.tokens.push_back(Token::Mul(String::from("*")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '/' => {
                     self.tokens.push_back(Token::Div(String::from("/")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '{' => {
                     self.tokens.push_back(Token::Lcb(String::from("{")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '}' => {
                     self.tokens.push_back(Token::Rcb(String::from("}")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '(' => {
                     self.tokens.push_back(Token::Lrb(String::from("(")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 ')' => {
                     self.tokens.push_back(Token::Rrb(String::from(")")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 ';' => {
                     self.tokens.push_back(Token::Scol(String::from(";")));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
                 '0'..='9' => {
@@ -236,6 +253,7 @@ impl Lexer {
                         }
                     }
                     self.tokens.push_back(Token::Num(n));
+                    self.lines.push_back(self.current_line);
                 }
                 'A'..='Z' | 'a'..='z' => {
                     let mut s = String::new();
@@ -253,15 +271,20 @@ impl Lexer {
                         }
                     }
                     match self.words.get(&s) {
-                        Some(t) => self.tokens.push_back(Token::clone(t)),
+                        Some(t) => {
+                            self.tokens.push_back(Token::clone(t));
+                            self.lines.push_back(self.current_line);
+                        }
                         None => {
                             self.tokens.push_back(Token::Id(s.clone()));
                             self.words.insert(s.clone(), Token::Id(s));
+                            self.lines.push_back(self.current_line);
                         }
                     }
                 }
                 _ => {
                     self.tokens.push_back(Token::Id(String::from(c)));
+                    self.lines.push_back(self.current_line);
                     it.next();
                 }
             }
