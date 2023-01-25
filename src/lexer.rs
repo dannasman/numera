@@ -2,7 +2,8 @@ use std::collections::{HashMap, LinkedList, VecDeque};
 
 #[derive(Debug, Clone)]
 pub enum Token {
-    Num(f64), // numbers are currently float only, maybe splitting into Num(u64) and Real(f64) later...
+    Num(u32), 
+    Real(f64),
     Id(String),
     True(String),
     False(String),
@@ -28,12 +29,16 @@ pub enum Token {
     Lrb(String),
     Rrb(String),
     Scol(String),
+    Int(String),
+    Float(String),
+    Bool(String),
 }
 
 impl Token {
     pub fn value_to_string(self) -> String {
         match self {
             Token::Num(i) => format!("{}", i),
+            Token::Real(i) => format!("{}", i),
             Token::Id(s) => s,
             Token::True(s) => s,
             Token::False(s) => s,
@@ -59,6 +64,9 @@ impl Token {
             Token::Lrb(s) => s,
             Token::Rrb(s) => s,
             Token::Scol(s) => s,
+            Token::Int(s) => s,
+            Token::Float(s) => s,
+            Token::Bool(s) => s,
         }
     }
 }
@@ -81,6 +89,9 @@ impl Lexer {
                 (String::from("if"), Token::If(String::from("if"))),
                 (String::from("else"), Token::Else(String::from("else"))),
                 (String::from("while"), Token::While(String::from("while"))),
+                (String::from("int"), Token::Int(String::from("int"))),
+                (String::from("float"), Token::Float(String::from("float"))),
+                (String::from("bool"), Token::Bool(String::from("bool"))),
             ]),
             current_line: 1,
             lines: VecDeque::new(),
@@ -217,10 +228,11 @@ impl Lexer {
 
                     it.next();
                     let mut digitch = it.peek();
-
+                    let mut is_real = false;
                     while let Some(&i) = digitch {
                         if !i.is_ascii_digit() {
                             if i == '.' {
+                                is_real = true;
                                 let mut d = 10.0;
                                 it.next();
                                 digitch = it.peek();
@@ -252,7 +264,12 @@ impl Lexer {
                             digitch = it.peek();
                         }
                     }
-                    self.tokens.push_back(Token::Num(n));
+                    if is_real {
+                        self.tokens.push_back(Token::Real(n));
+                    } else {
+                        let i = n as u32;
+                        self.tokens.push_back(Token::Num(i));
+                    }
                     self.lines.push_back(self.current_line);
                 }
                 'A'..='Z' | 'a'..='z' => {
@@ -311,7 +328,7 @@ mod tests {
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
-            r#"[Num(1.0), Id("_"), While("while"), Lcb("{"), Ne("!="), And("&&"), Asgn("="), Id("ok"), Num(3.4), Num(1.0), Asgn("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#,
+            r#"[Num(1), Id("_"), While("while"), Lcb("{"), Ne("!="), And("&&"), Asgn("="), Id("ok"), Real(3.4), Real(1.0), Asgn("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#,
             output
         )
     }
