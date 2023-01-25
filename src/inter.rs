@@ -1,6 +1,6 @@
 use super::lexer::Token;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 pub trait ExprNode {
     fn emit_label(&self, i: u32) {
@@ -99,7 +99,7 @@ impl StmtUnion {
     fn after(&self) -> u32 {
         match self {
             StmtUnion::While(while_stmt) => {
-                let after_borrow= while_stmt.after.borrow_mut();
+                let after_borrow = while_stmt.after.borrow_mut();
                 let after = *after_borrow;
                 drop(after_borrow);
                 after
@@ -182,7 +182,12 @@ impl Arith {
         Arith::new(self.op.clone(), Rc::clone(&self.temp_count), e1, e2)
     }
 
-    pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr1: ExprUnion, expr2: ExprUnion) -> Self {
+    pub fn new(
+        op: Token,
+        temp_count: Rc<RefCell<u32>>,
+        expr1: ExprUnion,
+        expr2: ExprUnion,
+    ) -> Self {
         Arith {
             op,
             temp_count,
@@ -731,7 +736,11 @@ pub struct Seq {
 }
 
 impl Seq {
-    pub fn new(label: Rc<RefCell<u32>>, stmt1: Option<StmtUnion>, stmt2: Option<StmtUnion>) -> Self {
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        stmt1: Option<StmtUnion>,
+        stmt2: Option<StmtUnion>,
+    ) -> Self {
         Seq {
             label,
             stmt1,
@@ -769,25 +778,21 @@ impl StmtNode for Seq {
 
 #[derive(Debug, Clone)]
 pub struct Break {
-    stmt: Option<StmtUnion>,
+    stmt: StmtUnion,
 }
 
 impl Break {
-    pub fn new(stmt: Option<StmtUnion>) -> Self {
-        Break { stmt }
+    pub fn new(stmt: Option<StmtUnion>) -> Result<Self, &'static str> {
+        match stmt {
+            Some(s) => Ok(Break { stmt: s }),
+            None => Err("unenclosed break"),
+        }
     }
 }
 
 impl StmtNode for Break {
     fn gen(&self, _b: u32, _a: u32) {
-        match &self.stmt {
-            Some(s) => {
-                let after = s.after();
-                self.emit(format!("goto L{}", after));
-            }
-            None => {
-                println!("unenclosed break");
-            }
-        }
+        let after = self.stmt.after();
+        self.emit(format!("goto L{}", after));
     }
 }

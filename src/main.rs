@@ -1,10 +1,10 @@
 mod inter;
 mod lexer;
 mod parser;
-use std::time::Instant;
 use std::env;
 use std::error::Error;
 use std::fs;
+use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -21,11 +21,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("----------compiling----------");
 
     let now = Instant::now();
-    
+
     parser.program(&input);
-    
+
     let elapsed = now.elapsed();
-    
+
     println!("Code compiled in {:?}", elapsed);
     Ok(())
 }
