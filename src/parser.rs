@@ -669,11 +669,14 @@ impl Parser {
                             Some(id)
                         }
                         None => {
-                            panic!("Error at line: {}: {} undeclared", line, s);
+                            panic!("Error at line {}: {} undeclared", line, s);
                         }
                     }
                 }
-                _ => None,
+                _ => {
+                    let line = self.get_line();
+                    panic!("Error at line {}: missing expression", line)
+                }
             },
             None => None,
         }
