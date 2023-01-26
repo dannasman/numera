@@ -262,14 +262,14 @@ impl Parser {
 
     fn assign(&mut self) -> Option<StmtUnion> {
         let mut t = self.lexer.tokens.pop_front();
-        let line = self.get_line();
+        let mut line = self.get_line();
         match t {
             Some(tp @ Token::Int(_)) | Some(tp @ Token::Float(_)) | Some(tp @ Token::Bool(_)) => {
                 t = self.lexer.tokens.pop_front();
                 self.get_line();
                 if let Some(Token::Id(id_s)) = t {
                     t = self.lexer.tokens.pop_front();
-                    self.get_line();
+                    line = self.get_line();
 
                     if let Some(Token::Asgn(_)) = t {
                     } else {
@@ -792,10 +792,12 @@ impl Parser {
                         Token::False(s),
                     )));
                     self.lexer.tokens.pop_front();
+                    self.get_line();
                     Some(constant)
                 }
                 Token::Lrb(_) => {
                     self.lexer.tokens.pop_front();
+                    self.get_line();
                     let expr = self.boolean();
                     let next = self.lexer.tokens.pop_front();
                     let line = self.get_line();

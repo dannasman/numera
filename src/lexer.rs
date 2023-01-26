@@ -322,6 +322,14 @@ mod tests {
     }
 
     #[test]
+    fn correct_token_line_count() {
+        let input = String::from("1 _ != && =ok 3.4 1.0=_");
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        assert_eq!(10, lexer.lines.len())
+    }
+
+    #[test]
     fn correct_token_types() {
         let input = String::from("1 _ while { != && =ok 3.4 1.0=_ true false if else true1");
         let mut lexer = Lexer::new();
@@ -351,9 +359,6 @@ mod tests {
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
-        assert_eq!(
-            r#"[Real(1.0), Num(1), True("true")]"#,
-            output
-        )
+        assert_eq!(r#"[Real(1.0), Num(1), True("true")]"#, output)
     }
 }
