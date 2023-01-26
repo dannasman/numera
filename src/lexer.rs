@@ -1,8 +1,8 @@
 use std::collections::{HashMap, LinkedList, VecDeque};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
-    Num(u32), 
+    Num(u32),
     Real(f64),
     Id(String),
     True(String),
@@ -38,7 +38,7 @@ impl Token {
     pub fn value_to_string(self) -> String {
         match self {
             Token::Num(i) => format!("{}", i),
-            Token::Real(i) => format!("{}", i),
+            Token::Real(i) => format!("{:?}", i),
             Token::Id(s) => s,
             Token::True(s) => s,
             Token::False(s) => s,
@@ -341,6 +341,18 @@ mod tests {
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
             r#"[While("while"), Lcb("{"), Lrb("("), Mul("*"), Div("/"), Scol(";"), Rrb(")"), Rcb("}")]"#,
+            output
+        )
+    }
+
+    #[test]
+    fn correct_type_handling() {
+        let input = String::from("1.0 1 true");
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        let output = format!("{:?}", lexer.tokens);
+        assert_eq!(
+            r#"[Real(1.0), Num(1), True("true")]"#,
             output
         )
     }

@@ -82,7 +82,7 @@ impl ExprUnion {
             ExprUnion::Or(or) => or.tp.clone(),
             ExprUnion::And(and) => and.tp.clone(),
             ExprUnion::Not(not) => not.tp.clone(),
-            ExprUnion::Rel(rel) => rel.tp.clone()
+            ExprUnion::Rel(rel) => rel.tp.clone(),
         }
     }
 
@@ -202,7 +202,7 @@ impl Arith {
             op: self.op.clone(),
             temp_count: Rc::clone(&self.temp_count),
             expr1: e1,
-            expr2: e2
+            expr2: e2,
         }
     }
 
@@ -213,59 +213,41 @@ impl Arith {
         expr2: ExprUnion,
     ) -> Result<Self, &'static str> {
         match expr1.get_type() {
-            Token::Int(s1) => {
-                match expr2.get_type() {
-                    Token::Int(s2) => {
-                        Ok(Arith{
-                            tp: Token::Int(s1),
-                            op,
-                            temp_count,
-                            expr1,
-                            expr2
-                        })
-                    },
-                    Token::Float(s2) => {
-                        Ok(Arith{
-                            tp: Token::Float(s2),
-                            op,
-                            temp_count,
-                            expr1,
-                            expr2
-                        })
-                    },
-                    _ => {
-                        return Err("wrong expression type")
-                    }
-                }
+            Token::Int(s1) => match expr2.get_type() {
+                Token::Int(_) => Ok(Arith {
+                    tp: Token::Int(s1),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                Token::Float(s2) => Ok(Arith {
+                    tp: Token::Float(s2),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                _ => Err("wrong expression type"),
             },
-            Token::Float(s1) => {
-                match expr2.get_type() {
-                    Token::Int(s2) => {
-                        Ok(Arith{
-                            tp: Token::Float(s1),
-                            op,
-                            temp_count,
-                            expr1,
-                            expr2
-                        })
-                    },
-                    Token::Float(s2) => {
-                        Ok(Arith{
-                            tp: Token::Float(s2),
-                            op,
-                            temp_count,
-                            expr1,
-                            expr2
-                        })
-                    },
-                    _ => {
-                        Err("wrong expression type")
-                    }
-                }
+            Token::Float(s1) => match expr2.get_type() {
+                Token::Int(_) => Ok(Arith {
+                    tp: Token::Float(s1),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                Token::Float(s2) => Ok(Arith {
+                    tp: Token::Float(s2),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                _ => Err("wrong expression type"),
             },
-            _ => {
-                Err("wrong expression type")
-            }
+            _ => Err("wrong expression type"),
         }
     }
 
@@ -299,7 +281,7 @@ impl Temp {
         *c += 1;
         let number = *c;
         drop(c);
-        Temp { tp,  number }
+        Temp { tp, number }
     }
 }
 
@@ -427,40 +409,40 @@ impl Or {
         temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
         expr2: ExprUnion,
-        ) -> Result<Self, &'static str> {
-            if let Token::Bool(s1) = expr1.get_type() {
-                if let Token::Bool(s2) = expr2.get_type() {
-                    return Ok(Or {
-                        tp: Token::Bool(s1),
-                        op,
-                        label,
-                        temp_count,
-                        expr1,
-                        expr2
-                    })
-                }
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(s1) = expr1.get_type() {
+            if let Token::Bool(_) = expr2.get_type() {
+                return Ok(Or {
+                    tp: Token::Bool(s1),
+                    op,
+                    label,
+                    temp_count,
+                    expr1,
+                    expr2,
+                });
             }
-            Err("wrong expression type")
+        }
+        Err("wrong expression type")
+    }
+}
+
+impl ExprNode for Or {
+    fn jumping(&self, t: u32, f: u32) {
+        let mut new_label = t;
+        if t == 0 {
+            let mut l = self.label.borrow_mut();
+            *l += 1;
+            new_label = *l;
+            drop(l);
+        }
+        self.expr1.jumping(new_label, 0);
+        self.expr2.jumping(t, f);
+        if t == 0 {
+            self.emit_label(new_label);
         }
     }
 
-    impl ExprNode for Or {
-        fn jumping(&self, t: u32, f: u32) {
-            let mut new_label = t;
-            if t == 0 {
-                let mut l = self.label.borrow_mut();
-                *l += 1;
-                new_label = *l;
-                drop(l);
-            }
-            self.expr1.jumping(new_label, 0);
-            self.expr2.jumping(t, f);
-            if t == 0 {
-                self.emit_label(new_label);
-            }
-        }
-
-        fn to_string(&self) -> String {
+    fn to_string(&self) -> String {
         let e1 = self.expr1.gen_expr_string();
         let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
@@ -504,15 +486,15 @@ impl And {
         expr2: ExprUnion,
     ) -> Result<Self, &'static str> {
         if let Token::Bool(s1) = expr1.get_type() {
-            if let Token::Bool(s2) = expr2.get_type() {
+            if let Token::Bool(_) = expr2.get_type() {
                 return Ok(And {
                     tp: Token::Bool(s1),
                     op,
                     label,
                     temp_count,
                     expr1,
-                    expr2
-                })
+                    expr2,
+                });
             }
         }
         Err("wrong expression type")
@@ -581,8 +563,8 @@ impl Not {
                 op,
                 label,
                 temp_count,
-                expr
-            })
+                expr,
+            });
         }
         Err("wrong expression type")
     }
@@ -634,19 +616,18 @@ impl Rel {
         expr1: ExprUnion,
         expr2: ExprUnion,
     ) -> Result<Self, &'static str> {
-        if let Token::Bool(s1) = expr1.get_type() {
-            if let Token::Bool(s2) = expr2.get_type() {
-                return Ok(Rel {
-                    tp: Token::Bool(s1),
-                    op,
-                    label,
-                    temp_count,
-                    expr1,
-                    expr2
-                })
-            }
+        if expr1.get_type() == expr2.get_type() {
+            Ok(Rel {
+                tp: Token::Bool(String::from("bool")),
+                op,
+                label,
+                temp_count,
+                expr1,
+                expr2,
+            })
+        } else {
+            Err("wrong expression type")
         }
-        Err("wrong expression type")
     }
 }
 
@@ -699,8 +680,16 @@ pub struct If {
 }
 
 impl If {
-    pub fn new(label: Rc<RefCell<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
-        If { label, expr, stmt }
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        expr: ExprUnion,
+        stmt: StmtUnion,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(_) = expr.get_type() {
+            Ok(If { label, expr, stmt })
+        } else {
+            Err("wrong expression type")
+        }
     }
 }
 
@@ -730,12 +719,16 @@ impl Else {
         expr: ExprUnion,
         stmt1: StmtUnion,
         stmt2: StmtUnion,
-    ) -> Self {
-        Else {
-            label,
-            expr,
-            stmt1,
-            stmt2,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(_) = expr.get_type() {
+            Ok(Else {
+                label,
+                expr,
+                stmt1,
+                stmt2,
+            })
+        } else {
+            Err("wrong expression type")
         }
     }
 }
@@ -776,37 +769,43 @@ impl While {
             stmt: None,
         }
     }
-    pub fn init(&mut self, expr: Option<ExprUnion>, stmt: Option<StmtUnion>) {
-        self.expr = expr;
-        self.stmt = stmt;
+    pub fn init(
+        &mut self,
+        expr: Option<ExprUnion>,
+        stmt: Option<StmtUnion>,
+    ) -> Result<(), &'static str> {
+        match expr {
+            Some(x) => {
+                if let Token::Bool(_) = x.get_type() {
+                    self.expr = Some(x);
+                    self.stmt = stmt;
+                    Ok(())
+                } else {
+                    Err("wrong expression type")
+                }
+            }
+            None => Err("expression missing"),
+        }
     }
 }
 
 impl StmtNode for While {
     fn gen(&self, b: u32, a: u32) {
-        match &self.expr {
-            Some(e) => match &self.stmt {
-                Some(s) => {
-                    let mut after_lock = self.after.borrow_mut();
-                    *after_lock = a;
-                    drop(after_lock);
+        if let Some(e) = &self.expr {
+            if let Some(s) = &self.stmt {
+                let mut after_lock = self.after.borrow_mut();
+                *after_lock = a;
+                drop(after_lock);
 
-                    e.jumping(0, a);
+                e.jumping(0, a);
 
-                    let mut l = self.label.borrow_mut();
-                    *l += 1;
-                    let new_label = *l;
-                    drop(l);
-                    self.emit_label(new_label);
-                    s.gen(new_label, b);
-                    self.emit(format!("goto L{}", b));
-                }
-                None => {
-                    println!("expression missing");
-                }
-            },
-            None => {
-                println!("expression missing");
+                let mut l = self.label.borrow_mut();
+                *l += 1;
+                let new_label = *l;
+                drop(l);
+                self.emit_label(new_label);
+                s.gen(new_label, b);
+                self.emit(format!("goto L{}", b));
             }
         }
     }
@@ -819,8 +818,12 @@ pub struct Set {
 }
 
 impl Set {
-    pub fn new(id: Id, expr: ExprUnion) -> Self {
-        Set { id, expr }
+    pub fn new(id: Id, expr: ExprUnion) -> Result<Self, &'static str> {
+        if id.tp == expr.get_type() {
+            Ok(Set { id, expr })
+        } else {
+            Err("variable and value types do not match")
+        }
     }
 }
 
