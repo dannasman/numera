@@ -4,7 +4,7 @@ Compiler project inspired by the dragon book. Contains only the compiler fronten
 Example code snippet `foo.num` in root directory:
 ```
 {
-    x = 1;
+    int x = 1;
     while(true) {
         if (x == 5) break;
         x = x + 1;
