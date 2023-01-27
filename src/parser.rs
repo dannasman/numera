@@ -276,6 +276,10 @@ impl Parser {
                         panic!("Error at line {}: token did not match =", line);
                     }
 
+                    if let Some(_) = self.symbol_table.get_mut(&id_s) {
+                        panic!("Error at line {}: variable {} already declared", line, id_s);
+                    }
+
                     let id = Id::new(tp, Token::Id(id_s.to_owned()));
                     let expr = self.boolean();
                     self.symbol_table.insert(id_s, id.clone());
