@@ -291,7 +291,12 @@ impl Parser {
         if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
             of = self.dims(tp);
         }
-        Token::Arr(Array::new(size, of.value_to_string()))
+        match of.get_width() {
+            Ok(w) => Token::Arr(Array::new(size, of, w)),
+            Err(e) => {
+                panic!("Error at line {}: {}", line, e)
+            }
+        }
     }
     fn assign(&mut self) -> Option<StmtUnion> {
         let mut t = self.lexer.tokens.pop_front();
@@ -339,8 +344,9 @@ impl Parser {
                             }
                         }
                     } else {
-                        let array_tp = self.dims(tp.to_owned());
-                        let id = Id::new(tp, Token::Id(id_s.to_owned()), self.used);
+                        let array_tp = self.dims(tp);
+                        let id =
+                            Id::new(array_tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
                         match array_tp.get_width() {
                             Ok(w) => self.used += w,
                             Err(e) => panic!("Error at line {}: {}", line, e),
@@ -403,7 +409,6 @@ impl Parser {
                                     let access = self.offset(id);
                                     t = self.lexer.tokens.pop_front();
                                     self.get_line();
-
                                     if let Some(Token::Asgn(_)) = t {
                                         let expr = self.boolean();
                                         match expr {
@@ -910,7 +915,7 @@ impl Parser {
                             let id = ExprUnion::Id(Box::new(sym.clone()));
                             if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
                                 let access = self.offset(sym.to_owned());
-                                return Some(ExprUnion::Access(Box::new(access)))
+                                return Some(ExprUnion::Access(Box::new(access)));
                             }
                             Some(id)
                         }
@@ -929,7 +934,7 @@ impl Parser {
     }
 
     fn offset(&mut self, a: Id) -> Access {
-        let tp = a.tp.to_owned();
+        let mut tp = a.tp.to_owned();
 
         let mut t = self.lexer.tokens.pop_front();
         let line = self.get_line();
@@ -945,6 +950,10 @@ impl Parser {
         if let Some(Token::Rsb(_)) = t {
         } else {
             panic!("Error at line {}: token did not macth ]", line);
+        }
+
+        if let Token::Arr(array) = tp {
+            tp = *array.of;
         }
 
         match tp.get_width() {
@@ -965,6 +974,10 @@ impl Parser {
                                 while let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
                                     self.lexer.tokens.pop_front();
                                     self.get_line();
+
+                                    if let Token::Arr(array) = tp {
+                                        tp = *array.of;
+                                    }
 
                                     idx = self.boolean();
                                     match idx {

@@ -1,18 +1,23 @@
 use std::collections::{HashMap, LinkedList, VecDeque};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Array {
-    pub of: String,
+    pub of: Box<Token>, //TODO: try to get rid of this
     pub size: u32,
+    pub width: u32,
 }
 
 impl Array {
-    pub fn new(size: u32, of: String) -> Self {
-        Array { size, of }
+    pub fn new(size: u32, of: Token, tp_width: u32) -> Self {
+        Array {
+            size,
+            of: Box::new(of),
+            width: size * tp_width,
+        }
     }
 
     pub fn array_to_string(&self) -> String {
-        format!("[ {} ] {}", self.size, self.of)
+        format!("[ {} ] {}", self.size, self.of.to_owned().value_to_string())
     }
 }
 
