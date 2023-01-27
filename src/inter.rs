@@ -55,6 +55,7 @@ pub enum ExprUnion {
     And(Box<And>),
     Not(Box<Not>),
     Rel(Box<Rel>),
+    Access(Box<Access>),
 }
 
 impl ExprUnion {
@@ -69,6 +70,22 @@ impl ExprUnion {
             ExprUnion::And(and) => and.gen().to_string(),
             ExprUnion::Not(not) => not.gen().to_string(),
             ExprUnion::Rel(rel) => rel.gen().to_string(),
+            ExprUnion::Access(acc) => acc.to_string(),
+        }
+    }
+
+    fn gen_reduce_string(&self) -> String {
+        match self {
+            ExprUnion::Id(id) => id.to_string(),
+            ExprUnion::Arith(arith) => arith.reduce().to_string(),
+            ExprUnion::Temp(temp) => temp.to_string(),
+            ExprUnion::Unary(unary) => unary.reduce().to_string(),
+            ExprUnion::Constant(constant) => constant.to_string(),
+            ExprUnion::Or(or) => or.gen().to_string(),
+            ExprUnion::And(and) => and.gen().to_string(),
+            ExprUnion::Not(not) => not.gen().to_string(),
+            ExprUnion::Rel(rel) => rel.gen().to_string(),
+            ExprUnion::Access(acc) => acc.reduce().to_string(),
         }
     }
 
@@ -83,6 +100,7 @@ impl ExprUnion {
             ExprUnion::And(and) => and.tp.clone(),
             ExprUnion::Not(not) => not.tp.clone(),
             ExprUnion::Rel(rel) => rel.tp.clone(),
+            ExprUnion::Access(acc) => acc.tp.clone(),
         }
     }
 
@@ -97,6 +115,7 @@ impl ExprUnion {
             ExprUnion::And(and) => and.jumping(t, f),
             ExprUnion::Not(not) => not.jumping(t, f),
             ExprUnion::Rel(rel) => rel.jumping(t, f),
+            ExprUnion::Access(acc) => acc.jumping(t, f),
         }
     }
 }
@@ -107,6 +126,7 @@ pub enum StmtUnion {
     Else(Box<Else>),
     While(Box<While>),
     Set(Box<Set>),
+    SetElem(Box<SetElem>),
     Seq(Box<Seq>),
     Break(Box<Break>),
 }
@@ -129,6 +149,7 @@ impl StmtUnion {
             StmtUnion::Else(else_stmt) => else_stmt.emit_label(i),
             StmtUnion::While(while_stmt) => while_stmt.emit_label(i),
             StmtUnion::Set(set_stmt) => set_stmt.emit_label(i),
+            StmtUnion::SetElem(set_stmt) => set_stmt.emit_label(i),
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
             StmtUnion::Break(break_stmt) => break_stmt.emit_label(i),
         }
@@ -139,6 +160,7 @@ impl StmtUnion {
             StmtUnion::Else(else_stmt) => else_stmt.gen(b, a),
             StmtUnion::While(while_stmt) => while_stmt.gen(b, a),
             StmtUnion::Set(set_stmt) => set_stmt.gen(b, a),
+            StmtUnion::SetElem(set_stmt) => set_stmt.gen(b, a),
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a),
             StmtUnion::Break(break_stmt) => break_stmt.gen(b, a),
         }
@@ -147,13 +169,18 @@ impl StmtUnion {
 
 #[derive(Debug, Clone)]
 pub struct Id {
-    tp: Token, //type
+    pub tp: Token, //type
     token: Token,
+    _offset: u32,
 }
 
 impl Id {
-    pub fn new(tp: Token, token: Token) -> Self {
-        Id { tp, token }
+    pub fn new(tp: Token, token: Token, b: u32) -> Self {
+        Id {
+            tp,
+            token,
+            _offset: b,
+        }
     }
 }
 
@@ -633,34 +660,11 @@ impl Rel {
 
 impl ExprNode for Rel {
     fn jumping(&self, t: u32, f: u32) {
-        let mut e1 = self.expr1.clone();
-        let mut e2 = self.expr2.clone();
-
-        match e1 {
-            ExprUnion::Arith(arith) => {
-                e1 = ExprUnion::Temp(Box::new(arith.reduce()));
-            }
-            ExprUnion::Unary(unary) => {
-                e1 = ExprUnion::Temp(Box::new(unary.reduce()));
-            }
-            _ => (),
-        }
-
-        match e2 {
-            ExprUnion::Arith(arith) => {
-                e2 = ExprUnion::Temp(Box::new(arith.reduce()));
-            }
-            ExprUnion::Unary(unary) => {
-                e2 = ExprUnion::Temp(Box::new(unary.reduce()));
-            }
-            _ => (),
-        }
-
         let test = format!(
             "{} {} {}",
-            e1.gen_expr_string(),
+            self.expr1.gen_reduce_string(),
             self.op.clone().value_to_string(),
-            e2.gen_expr_string()
+            self.expr2.gen_reduce_string(),
         );
         self.emit_jumps(test, t, f);
     }
@@ -669,6 +673,71 @@ impl ExprNode for Rel {
         let e1 = self.expr1.gen_expr_string();
         let e2 = self.expr2.gen_expr_string();
         format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Access {
+    tp: Token, //type
+    token: Token,
+    temp_count: Rc<RefCell<u32>>,
+    array: Id,
+    index: ExprUnion,
+}
+
+impl Access {
+    pub fn gen(&self) -> Self {
+        match &self.index {
+            ExprUnion::Arith(arith) => Access {
+                tp: self.tp.to_owned(),
+                token: self.token.to_owned(),
+                temp_count: Rc::clone(&self.temp_count),
+                array: self.array.to_owned(),
+                index: ExprUnion::Temp(Box::new(arith.reduce())),
+            },
+            ExprUnion::Unary(unary) => Access {
+                tp: self.tp.to_owned(),
+                token: self.token.to_owned(),
+                temp_count: Rc::clone(&self.temp_count),
+                array: self.array.to_owned(),
+                index: ExprUnion::Temp(Box::new(unary.reduce())),
+            },
+            _ => Access {
+                tp: self.tp.to_owned(),
+                token: self.token.to_owned(),
+                temp_count: Rc::clone(&self.temp_count),
+                array: self.array.to_owned(),
+                index: self.index.to_owned(),
+            },
+        }
+    }
+    pub fn new(tp: Token, temp_count: Rc<RefCell<u32>>, array: Id, index: ExprUnion) -> Self {
+        Access {
+            tp,
+            token: Token::Id(String::from("[]")),
+            temp_count,
+            array,
+            index,
+        }
+    }
+    pub fn reduce(&self) -> Temp {
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
+        temp
+    }
+}
+
+impl ExprNode for Access {
+    fn jumping(&self, t: u32, f: u32) {
+        self.emit_jumps(self.reduce().to_string(), t, f)
+    }
+
+    fn to_string(&self) -> String {
+        format!(
+            "{} [ {} ]",
+            self.array.to_string(),
+            self.index.gen_expr_string()
+        )
     }
 }
 
@@ -831,6 +900,38 @@ impl StmtNode for Set {
     fn gen(&self, _b: u32, _a: u32) {
         let e = self.expr.gen_expr_string();
         self.emit(format!("{} = {}", self.id.to_string(), e));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SetElem {
+    array: Id,
+    index: ExprUnion,
+    expr: ExprUnion,
+}
+
+impl SetElem {
+    pub fn new(x: Access, y: ExprUnion) -> Result<Self, &'static str> {
+        if x.tp == y.get_type() {
+            Ok(SetElem {
+                array: x.array,
+                index: x.index,
+                expr: y,
+            })
+        } else {
+            Err("variable and value types do not match")
+        }
+    }
+}
+
+impl StmtNode for SetElem {
+    fn gen(&self, _b: u32, _a: u32) {
+        self.emit(format!(
+            "{} [ {} ] = {}",
+            self.array.to_string(),
+            self.index.gen_reduce_string(),
+            self.expr.gen_reduce_string()
+        ))
     }
 }
 

@@ -1,5 +1,21 @@
 use std::collections::{HashMap, LinkedList, VecDeque};
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Array {
+    pub of: String,
+    pub size: u32,
+}
+
+impl Array {
+    pub fn new(size: u32, of: String) -> Self {
+        Array { size, of }
+    }
+
+    pub fn array_to_string(&self) -> String {
+        format!("[ {} ] {}", self.size, self.of)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Num(u32),
@@ -28,10 +44,13 @@ pub enum Token {
     Rcb(String),
     Lrb(String),
     Rrb(String),
+    Lsb(String),
+    Rsb(String),
     Scol(String),
     Int(String),
     Float(String),
     Bool(String),
+    Arr(Array),
 }
 
 impl Token {
@@ -63,10 +82,23 @@ impl Token {
             Token::Rcb(s) => s,
             Token::Lrb(s) => s,
             Token::Rrb(s) => s,
+            Token::Lsb(s) => s,
+            Token::Rsb(s) => s,
             Token::Scol(s) => s,
             Token::Int(s) => s,
             Token::Float(s) => s,
             Token::Bool(s) => s,
+            Token::Arr(a) => a.array_to_string(),
+        }
+    }
+
+    pub fn get_width(&self) -> Result<u32, &'static str> {
+        match self {
+            Token::Int(_) => Ok(4),
+            Token::Float(_) => Ok(8),
+            Token::Bool(_) => Ok(1),
+            Token::Arr(a) => Ok(a.size),
+            _ => Err("type does not exist"),
         }
     }
 }
@@ -215,6 +247,16 @@ impl Lexer {
                     self.lines.push_back(self.current_line);
                     it.next();
                 }
+                '[' => {
+                    self.tokens.push_back(Token::Lsb(String::from("[")));
+                    self.lines.push_back(self.current_line);
+                    it.next();
+                }
+                ']' => {
+                    self.tokens.push_back(Token::Rsb(String::from("]")));
+                    self.lines.push_back(self.current_line);
+                    it.next();
+                }
                 ';' => {
                     self.tokens.push_back(Token::Scol(String::from(";")));
                     self.lines.push_back(self.current_line);
@@ -342,13 +384,13 @@ mod tests {
     }
 
     #[test]
-    fn correct_block_handling() {
-        let input = String::from("while {(*/;)}");
+    fn correct_bracket_handling() {
+        let input = String::from("while {([*/;])}");
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
-            r#"[While("while"), Lcb("{"), Lrb("("), Mul("*"), Div("/"), Scol(";"), Rrb(")"), Rcb("}")]"#,
+            r#"[While("while"), Lcb("{"), Lrb("("), Lsb("["), Mul("*"), Div("/"), Scol(";"), Rsb("]"), Rrb(")"), Rcb("}")]"#,
             output
         )
     }
