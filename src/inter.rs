@@ -2,6 +2,8 @@ use super::lexer::Token;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+//TODO: lisää tyypit viela statementseihin ja sen jälkeen siirry parseriin
+
 pub trait ExprNode {
     fn emit_label(&self, i: u32) {
         println!("L{}:", i);
@@ -70,6 +72,20 @@ impl ExprUnion {
         }
     }
 
+    fn get_type(&self) -> Token {
+        match self {
+            ExprUnion::Id(id) => id.tp.clone(),
+            ExprUnion::Arith(arith) => arith.tp.clone(),
+            ExprUnion::Temp(temp) => temp.tp.clone(),
+            ExprUnion::Unary(unary) => unary.tp.clone(),
+            ExprUnion::Constant(constant) => constant.tp.clone(),
+            ExprUnion::Or(or) => or.tp.clone(),
+            ExprUnion::And(and) => and.tp.clone(),
+            ExprUnion::Not(not) => not.tp.clone(),
+            ExprUnion::Rel(rel) => rel.tp.clone(),
+        }
+    }
+
     fn jumping(&self, t: u32, f: u32) {
         match self {
             ExprUnion::Id(id) => id.jumping(t, f),
@@ -131,12 +147,13 @@ impl StmtUnion {
 
 #[derive(Debug, Clone)]
 pub struct Id {
+    tp: Token, //type
     token: Token,
 }
 
 impl Id {
-    pub fn new(token: Token) -> Self {
-        Id { token }
+    pub fn new(tp: Token, token: Token) -> Self {
+        Id { tp, token }
     }
 }
 
@@ -148,6 +165,7 @@ impl ExprNode for Id {
 
 #[derive(Debug, Clone)]
 pub struct Arith {
+    tp: Token, //type
     op: Token,
     temp_count: Rc<RefCell<u32>>,
     expr1: ExprUnion,
@@ -179,7 +197,13 @@ impl Arith {
             _ => (),
         }
 
-        Arith::new(self.op.clone(), Rc::clone(&self.temp_count), e1, e2)
+        Arith {
+            tp: self.tp.clone(),
+            op: self.op.clone(),
+            temp_count: Rc::clone(&self.temp_count),
+            expr1: e1,
+            expr2: e2,
+        }
     }
 
     pub fn new(
@@ -187,17 +211,48 @@ impl Arith {
         temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
         expr2: ExprUnion,
-    ) -> Self {
-        Arith {
-            op,
-            temp_count,
-            expr1,
-            expr2,
+    ) -> Result<Self, &'static str> {
+        match expr1.get_type() {
+            Token::Int(s1) => match expr2.get_type() {
+                Token::Int(_) => Ok(Arith {
+                    tp: Token::Int(s1),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                Token::Float(s2) => Ok(Arith {
+                    tp: Token::Float(s2),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                _ => Err("wrong expression type"),
+            },
+            Token::Float(s1) => match expr2.get_type() {
+                Token::Int(_) => Ok(Arith {
+                    tp: Token::Float(s1),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                Token::Float(s2) => Ok(Arith {
+                    tp: Token::Float(s2),
+                    op,
+                    temp_count,
+                    expr1,
+                    expr2,
+                }),
+                _ => Err("wrong expression type"),
+            },
+            _ => Err("wrong expression type"),
         }
     }
 
     fn reduce(&self) -> Temp {
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         temp
     }
@@ -216,16 +271,17 @@ impl ExprNode for Arith {
 
 #[derive(Debug, Clone)]
 pub struct Temp {
+    tp: Token, //type
     number: u32,
 }
 
 impl Temp {
-    pub fn new(temp_count: Rc<RefCell<u32>>) -> Self {
+    pub fn new(tp: Token, temp_count: Rc<RefCell<u32>>) -> Self {
         let mut c = temp_count.borrow_mut();
         *c += 1;
         let number = *c;
         drop(c);
-        Temp { number }
+        Temp { tp, number }
     }
 }
 
@@ -237,6 +293,7 @@ impl ExprNode for Temp {
 
 #[derive(Debug, Clone)]
 pub struct Unary {
+    tp: Token, //type
     op: Token,
     temp_count: Rc<RefCell<u32>>,
     expr: ExprUnion,
@@ -258,6 +315,7 @@ impl Unary {
     }
     pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr: ExprUnion) -> Self {
         Unary {
+            tp: expr.get_type(),
             op,
             temp_count,
             expr,
@@ -265,7 +323,7 @@ impl Unary {
     }
 
     fn reduce(&self) -> Temp {
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.emit(format!("{} = {}", temp.to_string(), self.gen().to_string()));
         temp
     }
@@ -284,12 +342,13 @@ impl ExprNode for Unary {
 
 #[derive(Debug, Clone)]
 pub struct Constant {
+    tp: Token,
     constant: Token,
 }
 
 impl Constant {
-    pub fn new(constant: Token) -> Self {
-        Constant { constant }
+    pub fn new(tp: Token, constant: Token) -> Self {
+        Constant { tp, constant }
     }
 }
 
@@ -317,9 +376,10 @@ impl ExprNode for Constant {
 
 #[derive(Debug, Clone)]
 pub struct Or {
+    tp: Token, //type
+    op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
-    op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
 }
@@ -334,7 +394,7 @@ impl Or {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -344,19 +404,25 @@ impl Or {
         temp
     }
     pub fn new(
+        op: Token,
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
-        op: Token,
         expr1: ExprUnion,
         expr2: ExprUnion,
-    ) -> Self {
-        Or {
-            label,
-            temp_count,
-            op,
-            expr1,
-            expr2,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(s1) = expr1.get_type() {
+            if let Token::Bool(_) = expr2.get_type() {
+                return Ok(Or {
+                    tp: Token::Bool(s1),
+                    op,
+                    label,
+                    temp_count,
+                    expr1,
+                    expr2,
+                });
+            }
         }
+        Err("wrong expression type")
     }
 }
 
@@ -385,9 +451,10 @@ impl ExprNode for Or {
 
 #[derive(Debug, Clone)]
 pub struct And {
+    tp: Token, //type
+    op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
-    op: Token,
     expr1: ExprUnion,
     expr2: ExprUnion,
 }
@@ -402,7 +469,7 @@ impl And {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -412,19 +479,25 @@ impl And {
         temp
     }
     pub fn new(
+        op: Token,
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
-        op: Token,
         expr1: ExprUnion,
         expr2: ExprUnion,
-    ) -> Self {
-        And {
-            label,
-            temp_count,
-            op,
-            expr1,
-            expr2,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(s1) = expr1.get_type() {
+            if let Token::Bool(_) = expr2.get_type() {
+                return Ok(And {
+                    tp: Token::Bool(s1),
+                    op,
+                    label,
+                    temp_count,
+                    expr1,
+                    expr2,
+                });
+            }
         }
+        Err("wrong expression type")
     }
 }
 
@@ -453,6 +526,7 @@ impl ExprNode for And {
 
 #[derive(Debug, Clone)]
 pub struct Not {
+    tp: Token,
     op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
@@ -468,7 +542,7 @@ impl Not {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -482,13 +556,17 @@ impl Not {
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
         expr: ExprUnion,
-    ) -> Self {
-        Not {
-            op,
-            label,
-            temp_count,
-            expr,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(s) = expr.get_type() {
+            return Ok(Not {
+                tp: Token::Bool(s),
+                op,
+                label,
+                temp_count,
+                expr,
+            });
         }
+        Err("wrong expression type")
     }
 }
 
@@ -505,6 +583,7 @@ impl ExprNode for Not {
 
 #[derive(Debug, Clone)]
 pub struct Rel {
+    tp: Token,
     op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
@@ -521,7 +600,7 @@ impl Rel {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f);
         self.emit(format!("{} = true", temp.to_string()));
         self.emit(format!("goto L{}", a));
@@ -536,13 +615,18 @@ impl Rel {
         temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
         expr2: ExprUnion,
-    ) -> Self {
-        Rel {
-            op,
-            label,
-            temp_count,
-            expr1,
-            expr2,
+    ) -> Result<Self, &'static str> {
+        if expr1.get_type() == expr2.get_type() {
+            Ok(Rel {
+                tp: Token::Bool(String::from("bool")),
+                op,
+                label,
+                temp_count,
+                expr1,
+                expr2,
+            })
+        } else {
+            Err("wrong expression type")
         }
     }
 }
@@ -596,8 +680,16 @@ pub struct If {
 }
 
 impl If {
-    pub fn new(label: Rc<RefCell<u32>>, expr: ExprUnion, stmt: StmtUnion) -> Self {
-        If { label, expr, stmt }
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        expr: ExprUnion,
+        stmt: StmtUnion,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(_) = expr.get_type() {
+            Ok(If { label, expr, stmt })
+        } else {
+            Err("wrong expression type")
+        }
     }
 }
 
@@ -627,12 +719,16 @@ impl Else {
         expr: ExprUnion,
         stmt1: StmtUnion,
         stmt2: StmtUnion,
-    ) -> Self {
-        Else {
-            label,
-            expr,
-            stmt1,
-            stmt2,
+    ) -> Result<Self, &'static str> {
+        if let Token::Bool(_) = expr.get_type() {
+            Ok(Else {
+                label,
+                expr,
+                stmt1,
+                stmt2,
+            })
+        } else {
+            Err("wrong expression type")
         }
     }
 }
@@ -673,37 +769,43 @@ impl While {
             stmt: None,
         }
     }
-    pub fn init(&mut self, expr: Option<ExprUnion>, stmt: Option<StmtUnion>) {
-        self.expr = expr;
-        self.stmt = stmt;
+    pub fn init(
+        &mut self,
+        expr: Option<ExprUnion>,
+        stmt: Option<StmtUnion>,
+    ) -> Result<(), &'static str> {
+        match expr {
+            Some(x) => {
+                if let Token::Bool(_) = x.get_type() {
+                    self.expr = Some(x);
+                    self.stmt = stmt;
+                    Ok(())
+                } else {
+                    Err("wrong expression type")
+                }
+            }
+            None => Err("expression missing"),
+        }
     }
 }
 
 impl StmtNode for While {
     fn gen(&self, b: u32, a: u32) {
-        match &self.expr {
-            Some(e) => match &self.stmt {
-                Some(s) => {
-                    let mut after_lock = self.after.borrow_mut();
-                    *after_lock = a;
-                    drop(after_lock);
+        if let Some(e) = &self.expr {
+            if let Some(s) = &self.stmt {
+                let mut after_lock = self.after.borrow_mut();
+                *after_lock = a;
+                drop(after_lock);
 
-                    e.jumping(0, a);
+                e.jumping(0, a);
 
-                    let mut l = self.label.borrow_mut();
-                    *l += 1;
-                    let new_label = *l;
-                    drop(l);
-                    self.emit_label(new_label);
-                    s.gen(new_label, b);
-                    self.emit(format!("goto L{}", b));
-                }
-                None => {
-                    println!("expression missing");
-                }
-            },
-            None => {
-                println!("expression missing");
+                let mut l = self.label.borrow_mut();
+                *l += 1;
+                let new_label = *l;
+                drop(l);
+                self.emit_label(new_label);
+                s.gen(new_label, b);
+                self.emit(format!("goto L{}", b));
             }
         }
     }
@@ -716,8 +818,12 @@ pub struct Set {
 }
 
 impl Set {
-    pub fn new(id: Id, expr: ExprUnion) -> Self {
-        Set { id, expr }
+    pub fn new(id: Id, expr: ExprUnion) -> Result<Self, &'static str> {
+        if id.tp == expr.get_type() {
+            Ok(Set { id, expr })
+        } else {
+            Err("variable and value types do not match")
+        }
     }
 }
 

@@ -1,10 +1,10 @@
 # numera
 Compiler project inspired by the dragon book. Contains only the compiler frontend at the moment.
 ## Example
-Example code snippet `foo.txt` in root directory:
+Example code snippet `foo.num` in root directory:
 ```
 {
-    x = 1;
+    int x = 1;
     while(true) {
         if (x == 5) break;
         x = x + 1;
@@ -18,7 +18,7 @@ cargo run foo.txt
 Output:
 ```
 {
-    x = 1;
+    int x = 1;
     while(true) {
         if (x == 5) break;
         x = x + 1;
@@ -37,8 +37,7 @@ L5:
 	x = x + 1
 	goto L3
 L2:
-Code compiled in 85.398µs
-
+Code compiled in 96.979µs
 ```
 ## Grammar
 Grammar of the language:
@@ -46,7 +45,8 @@ Grammar of the language:
 program     ->      block
 block       ->      { stmts }
 stmts       ->      stmts stmt | ε
-stmt        ->      id = bool;
+stmt        ->      type id = bool;
+            |       id = bool;
             |       if (bool) stmt
             |       if (bool) stmt else stmt
             |       while (bool) stmt
