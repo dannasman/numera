@@ -4,10 +4,12 @@ Compiler project inspired by the dragon book. Contains only the compiler fronten
 Example code snippet `foo.num` in root directory:
 ```
 {
-    int x = 1;
-    while(true) {
-        if (x == 5) break;
-        x = x + 1;
+    int x[10];
+    int i = 0;
+    while (true) {
+        if (i == 10) break;
+        x[i] = i;
+        i = i + 1;
     }
 }
 ```
@@ -18,26 +20,32 @@ cargo run foo.txt
 Output:
 ```
 {
-    int x = 1;
-    while(true) {
-        if (x == 5) break;
-        x = x + 1;
+    int x[10];
+    int i = 0;
+    while (true) {
+        if (i == 10) break;
+        x[i] = i;
+        i = i + 1;
     }
 }
 
 ----------compiling----------
 L1:
-	x = 1
+	i = 0
 L3:
 L4:
-	iffalse x == 5 goto L5
+	iffalse i == 10 goto L5
 L6:
 	goto L2
 L5:
-	x = x + 1
+	t1 = i * 4
+	x [ t1 ] = i
+L7:
+	i = i + 1
 	goto L3
 L2:
-Code compiled in 96.979µs
+Code compiled in 149.672µs
+
 ```
 ## Grammar
 Grammar of the language:
@@ -46,12 +54,14 @@ program     ->      block
 block       ->      { stmts }
 stmts       ->      stmts stmt | ε
 stmt        ->      type id = bool;
-            |       id = bool;
+            |       type id [ num ];
+            |       loc = bool;
             |       if (bool) stmt
             |       if (bool) stmt else stmt
             |       while (bool) stmt
             |       break;
             |       block
+loc         ->      loc [ bool ] | id
 bool        ->      bool || join | join
 join        ->      join && equality | equality
 equality    ->      equality == rel | equality != rel | rel
@@ -60,5 +70,5 @@ rel         ->      expr < expr | expr <= expr | expr >= expr |
 expr        ->      expr + term | expr - term | term
 term        ->      term * unary | term / unary | unary
 unary       ->      ! unary | - unary | factor
-factor      ->      ( bool ) | id | num | true | false
+factor      ->      ( bool ) | loc | num | true | false
 ```
