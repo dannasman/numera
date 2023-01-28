@@ -211,6 +211,9 @@ impl Arith {
             ExprUnion::Unary(unary) => {
                 e1 = ExprUnion::Temp(Box::new(unary.reduce()));
             }
+            ExprUnion::Access(acc) => {
+                e1 = ExprUnion::Temp(Box::new(acc.reduce()));
+            }
             _ => (),
         }
 
@@ -220,6 +223,9 @@ impl Arith {
             }
             ExprUnion::Unary(unary) => {
                 e2 = ExprUnion::Temp(Box::new(unary.reduce()));
+            }
+            ExprUnion::Access(acc) => {
+                e2 = ExprUnion::Temp(Box::new(acc.reduce()));
             }
             _ => (),
         }
