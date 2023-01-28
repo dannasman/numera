@@ -1,4 +1,4 @@
-use std::collections::{HashMap, LinkedList, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Array {
@@ -110,7 +110,7 @@ impl Token {
 
 #[derive(Debug, Clone)]
 pub struct Lexer {
-    pub tokens: LinkedList<Token>,
+    pub tokens: VecDeque<Token>,
     words: HashMap<String, Token>,
     current_line: u32,
     pub lines: VecDeque<u32>, //safe line of token i to lines[i-1]
@@ -119,7 +119,7 @@ pub struct Lexer {
 impl Lexer {
     pub fn new() -> Lexer {
         Lexer {
-            tokens: LinkedList::new(),
+            tokens: VecDeque::new(),
             words: HashMap::from([
                 (String::from("true"), Token::True(String::from("true"))),
                 (String::from("false"), Token::False(String::from("false"))),
