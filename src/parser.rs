@@ -975,10 +975,6 @@ impl Parser {
                                     self.lexer.tokens.pop_front();
                                     self.get_line();
 
-                                    if let Token::Arr(array) = tp {
-                                        tp = *array.of;
-                                    }
-
                                     idx = self.boolean();
                                     match idx {
                                         Some(i_inner) => {
@@ -992,33 +988,49 @@ impl Parser {
                                                 );
                                             }
 
-                                            w = Constant::new(
-                                                Token::Int(String::from("int")),
-                                                Token::Num(width),
-                                            );
+                                            if let Token::Arr(array) = tp {
+                                                tp = *array.of;
+                                            }
 
-                                            temp1 = Arith::new(
-                                                Token::Mul(String::from("*")),
-                                                Rc::clone(&self.temp_count),
-                                                i_inner.to_owned(),
-                                                ExprUnion::Constant(Box::new(w.to_owned())),
-                                            );
-                                            match temp1 {
-                                                Ok(t1_inner) => {
-                                                    let temp2 = Arith::new(
-                                                        Token::Add(String::from("+")),
-                                                        Rc::clone(&self.temp_count),
-                                                        ExprUnion::Arith(Box::new(loc.to_owned())),
-                                                        ExprUnion::Arith(Box::new(
-                                                            t1_inner.to_owned(),
-                                                        )),
+                                            match tp.get_width() {
+                                                Ok(width_inner) => {
+                                                    w = Constant::new(
+                                                        Token::Int(String::from("int")),
+                                                        Token::Num(width_inner),
                                                     );
-                                                    match temp2 {
-                                                        Ok(t2) => {
-                                                            loc = t2;
+
+                                                    temp1 = Arith::new(
+                                                        Token::Mul(String::from("*")),
+                                                        Rc::clone(&self.temp_count),
+                                                        i_inner.to_owned(),
+                                                        ExprUnion::Constant(Box::new(w.to_owned())),
+                                                    );
+                                                    match temp1 {
+                                                        Ok(t1_inner) => {
+                                                            let temp2 = Arith::new(
+                                                                Token::Add(String::from("+")),
+                                                                Rc::clone(&self.temp_count),
+                                                                ExprUnion::Arith(Box::new(
+                                                                    loc.to_owned(),
+                                                                )),
+                                                                ExprUnion::Arith(Box::new(
+                                                                    t1_inner.to_owned(),
+                                                                )),
+                                                            );
+                                                            match temp2 {
+                                                                Ok(t2) => {
+                                                                    loc = t2;
+                                                                }
+                                                                Err(e) => {
+                                                                    panic!(
+                                                                        "Error at line {}: {}",
+                                                                        line, e
+                                                                    );
+                                                                }
+                                                            }
                                                         }
                                                         Err(e) => {
-                                                            panic!("Error at line {}: {}", line, e);
+                                                            panic!("Error at line {}: {}", line, e)
                                                         }
                                                     }
                                                 }

@@ -912,6 +912,12 @@ pub struct SetElem {
 
 impl SetElem {
     pub fn new(x: Access, y: ExprUnion) -> Result<Self, &'static str> {
+        if let Token::Arr(_) = x.tp {
+            return Err("can not assign to instance of type array");
+        }
+        if let Token::Arr(_) = y.get_type() {
+            return Err("can not assign a value of type array");
+        }
         if x.tp == y.get_type() {
             Ok(SetElem {
                 array: x.array,
