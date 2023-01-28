@@ -102,7 +102,7 @@ impl Token {
             Token::Int(_) => Ok(4),
             Token::Float(_) => Ok(8),
             Token::Bool(_) => Ok(1),
-            Token::Arr(a) => Ok(a.size),
+            Token::Arr(a) => Ok(a.width),
             _ => Err("type does not exist"),
         }
     }
