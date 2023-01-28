@@ -342,6 +342,10 @@ impl Unary {
             ExprUnion::Unary(unary) => {
                 e = ExprUnion::Temp(Box::new(unary.reduce()));
             }
+            ExprUnion::Access(acc) => {
+                e = ExprUnion::Temp(Box::new(acc.reduce()));
+            }
+
             _ => (),
         }
         Unary::new(self.op.clone(), Rc::clone(&self.temp_count), e)
