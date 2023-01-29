@@ -2,8 +2,6 @@ use super::lexer::Token;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-//TODO: remove printing and save ir for codgen
-
 pub trait ExprNode {
     fn emit_label(&self, i: u32, ir: Rc<RefCell<String>>) {
         ir.borrow_mut().push_str(&format!("L{}\n", i));
@@ -416,7 +414,7 @@ impl ExprNode for Constant {
                     self.emit(format!("goto L{}", f), Rc::clone(&ir));
                 }
             }
-            _ => (), //TODO: palaa tähån kun funktioiden palautus on Result-tyyppiä
+            _ => ()
         }
     }
 
