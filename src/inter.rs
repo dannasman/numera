@@ -286,7 +286,14 @@ impl Arith {
 
     fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        self.emit(format!("{} = {}", temp.to_string(Rc::clone(&ir)), self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!(
+                "{} = {}",
+                temp.to_string(Rc::clone(&ir)),
+                self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))
+            ),
+            Rc::clone(&ir),
+        );
         temp
     }
 }
@@ -361,7 +368,14 @@ impl Unary {
 
     fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        self.emit(format!("{} = {}", temp.to_string(Rc::clone(&ir)), self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!(
+                "{} = {}",
+                temp.to_string(Rc::clone(&ir)),
+                self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))
+            ),
+            Rc::clone(&ir),
+        );
         temp
     }
 }
@@ -433,10 +447,16 @@ impl Or {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
-        self.emit(format!("{} = true", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = true", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit(format!("goto L{}", a), Rc::clone(&ir));
         self.emit_label(f, Rc::clone(&ir));
-        self.emit(format!("{} = false", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = false", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit_label(a, Rc::clone(&ir));
         temp
     }
@@ -508,10 +528,16 @@ impl And {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
-        self.emit(format!("{} = true", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = true", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit(format!("goto L{}", a), Rc::clone(&ir));
         self.emit_label(f, Rc::clone(&ir));
-        self.emit(format!("{} = false", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = false", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit_label(a, Rc::clone(&ir));
         temp
     }
@@ -581,10 +607,16 @@ impl Not {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
-        self.emit(format!("{} = true", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = true", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit(format!("goto L{}", a), Rc::clone(&ir));
         self.emit_label(f, Rc::clone(&ir));
-        self.emit(format!("{} = false", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = false", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit_label(a, Rc::clone(&ir));
         temp
     }
@@ -639,10 +671,16 @@ impl Rel {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
-        self.emit(format!("{} = true", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = true", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit(format!("goto L{}", a), Rc::clone(&ir));
         self.emit_label(f, Rc::clone(&ir));
-        self.emit(format!("{} = false", temp.to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!("{} = false", temp.to_string(Rc::clone(&ir))),
+            Rc::clone(&ir),
+        );
         self.emit_label(a, Rc::clone(&ir));
         temp
     }
@@ -732,14 +770,26 @@ impl Access {
     }
     pub fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        self.emit(format!("{} = {}", temp.to_string(Rc::clone(&ir)), self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))), Rc::clone(&ir));
+        self.emit(
+            format!(
+                "{} = {}",
+                temp.to_string(Rc::clone(&ir)),
+                self.gen(Rc::clone(&ir)).to_string(Rc::clone(&ir))
+            ),
+            Rc::clone(&ir),
+        );
         temp
     }
 }
 
 impl ExprNode for Access {
     fn jumping(&self, t: u32, f: u32, ir: Rc<RefCell<String>>) {
-        self.emit_jumps(self.reduce(Rc::clone(&ir)).to_string(Rc::clone(&ir)), t, f, Rc::clone(&ir))
+        self.emit_jumps(
+            self.reduce(Rc::clone(&ir)).to_string(Rc::clone(&ir)),
+            t,
+            f,
+            Rc::clone(&ir),
+        )
     }
 
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
@@ -909,7 +959,10 @@ impl Set {
 impl StmtNode for Set {
     fn gen(&self, _b: u32, _a: u32, ir: Rc<RefCell<String>>) {
         let e = self.expr.gen_expr_string(Rc::clone(&ir));
-        self.emit(format!("{} = {}", self.id.to_string(Rc::clone(&ir)), e), Rc::clone(&ir));
+        self.emit(
+            format!("{} = {}", self.id.to_string(Rc::clone(&ir)), e),
+            Rc::clone(&ir),
+        );
     }
 }
 
@@ -942,12 +995,15 @@ impl SetElem {
 
 impl StmtNode for SetElem {
     fn gen(&self, _b: u32, _a: u32, ir: Rc<RefCell<String>>) {
-        self.emit(format!(
-            "{} [ {} ] = {}",
-            self.array.to_string(Rc::clone(&ir)),
-            self.index.gen_reduce_string(Rc::clone(&ir)),
-            self.expr.gen_reduce_string(Rc::clone(&ir))
-        ),Rc::clone(&ir))
+        self.emit(
+            format!(
+                "{} [ {} ] = {}",
+                self.array.to_string(Rc::clone(&ir)),
+                self.index.gen_reduce_string(Rc::clone(&ir)),
+                self.expr.gen_reduce_string(Rc::clone(&ir))
+            ),
+            Rc::clone(&ir),
+        )
     }
 }
 
