@@ -13,6 +13,7 @@ pub struct Parser {
     lexer: Lexer,
     symbol_table: HashMap<String, Id>,
     temp_count: Rc<RefCell<u32>>,
+    inter_rep: Rc<RefCell<String>>,
     used: u32,
 }
 
@@ -24,8 +25,13 @@ impl Parser {
             lexer,
             symbol_table: HashMap::new(),
             temp_count: Rc::new(RefCell::new(0)),
+            inter_rep: Rc::new(RefCell::new(String::new())),
             used: 0,
         }
+    }
+
+    pub fn get_ir(&self) -> String {
+        self.inter_rep.borrow().to_string()
     }
 
     pub fn get_line(&mut self) -> u32 {
@@ -48,9 +54,9 @@ impl Parser {
             let after = *l;
             drop(l);
 
-            s.emit_label(begin);
-            s.gen(begin, after);
-            s.emit_label(after);
+            s.emit_label(begin, Rc::clone(&self.inter_rep));
+            s.gen(begin, after, Rc::clone(&self.inter_rep));
+            s.emit_label(after, Rc::clone(&self.inter_rep));
         }
     }
 

@@ -26,6 +26,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let elapsed = now.elapsed();
 
+    println!("{}", parser.get_ir());
+
     println!("Code compiled in {:?}", elapsed);
     Ok(())
 }
