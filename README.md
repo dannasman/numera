@@ -1,5 +1,7 @@
 # numera
 Compiler project inspired by the dragon book. Contains only the compiler frontend at the moment.
+
+![main](https://github.com/dannasman/numera/actions/workflows/rust.yml/badge.svg)
 ## Example
 Example code snippet `foo.num` in root directory:
 ```
