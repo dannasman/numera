@@ -1,7 +1,9 @@
 # numera
 Compiler project inspired by the dragon book. Contains only the compiler frontend at the moment.
 
-![main](https://github.com/dannasman/numera/actions/workflows/rust.yml/badge.svg)
+![ci](https://github.com/dannasman/numera/actions/workflows/rust.yml/badge.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Contributors](https://img.shields.io/github/contributors/dannasman/numera)](https://github.com/dannasman/numera/graphs/contributors)
 ## Example
 Example code snippet `foo.num` in root directory:
 ```
