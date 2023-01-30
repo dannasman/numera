@@ -44,16 +44,16 @@ pub trait StmtNode {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ExprUnion {
-    Id(Box<Id>),
-    Arith(Box<Arith>),
-    Temp(Box<Temp>),
-    Unary(Box<Unary>),
-    Constant(Box<Constant>),
-    Or(Box<Or>),
-    And(Box<And>),
-    Not(Box<Not>),
-    Rel(Box<Rel>),
-    Access(Box<Access>),
+    Id(Rc<Id>),
+    Arith(Rc<Arith>),
+    Temp(Rc<Temp>),
+    Unary(Rc<Unary>),
+    Constant(Rc<Constant>),
+    Or(Rc<Or>),
+    And(Rc<And>),
+    Not(Rc<Not>),
+    Rel(Rc<Rel>),
+    Access(Rc<Access>),
 }
 
 impl ExprUnion {
@@ -120,22 +120,22 @@ impl ExprUnion {
 
 #[derive(Debug, Clone)]
 pub enum StmtUnion {
-    If(Box<If>),
-    Else(Box<Else>),
-    While(Box<While>),
-    Set(Box<Set>),
-    SetElem(Box<SetElem>),
-    Seq(Box<Seq>),
-    Break(Box<Break>),
+    If(Rc<If>),
+    Else(Rc<Else>),
+    While(Rc<RefCell<While>>), //needs to be mutable because of init() function
+    Set(Rc<Set>),
+    SetElem(Rc<SetElem>),
+    Seq(Rc<Seq>),
+    Break(Rc<Break>),
 }
 
 impl StmtUnion {
     fn after(&self) -> u32 {
         match self {
             StmtUnion::While(while_stmt) => {
-                let after_borrow = while_stmt.after.borrow_mut();
-                let after = *after_borrow;
-                drop(after_borrow);
+                let borrow_while = while_stmt.borrow_mut();
+                let after = *borrow_while.after.borrow_mut();
+                drop(borrow_while);
                 after
             }
             _ => 0,
@@ -145,7 +145,7 @@ impl StmtUnion {
         match self {
             StmtUnion::If(if_stmt) => if_stmt.emit_label(i, Rc::clone(&ir)),
             StmtUnion::Else(else_stmt) => else_stmt.emit_label(i, Rc::clone(&ir)),
-            StmtUnion::While(while_stmt) => while_stmt.emit_label(i, Rc::clone(&ir)),
+            StmtUnion::While(while_stmt) => while_stmt.borrow().emit_label(i, Rc::clone(&ir)),
             StmtUnion::Set(set_stmt) => set_stmt.emit_label(i, Rc::clone(&ir)),
             StmtUnion::SetElem(set_stmt) => set_stmt.emit_label(i, Rc::clone(&ir)),
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i, Rc::clone(&ir)),
@@ -156,7 +156,7 @@ impl StmtUnion {
         match self {
             StmtUnion::If(if_stmt) => if_stmt.gen(b, a, Rc::clone(&ir)),
             StmtUnion::Else(else_stmt) => else_stmt.gen(b, a, Rc::clone(&ir)),
-            StmtUnion::While(while_stmt) => while_stmt.gen(b, a, Rc::clone(&ir)),
+            StmtUnion::While(while_stmt) => while_stmt.borrow().gen(b, a, Rc::clone(&ir)),
             StmtUnion::Set(set_stmt) => set_stmt.gen(b, a, Rc::clone(&ir)),
             StmtUnion::SetElem(set_stmt) => set_stmt.gen(b, a, Rc::clone(&ir)),
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a, Rc::clone(&ir)),
@@ -204,26 +204,26 @@ impl Arith {
 
         match e1 {
             ExprUnion::Arith(arith) => {
-                e1 = ExprUnion::Temp(Box::new(arith.reduce(Rc::clone(&ir))));
+                e1 = ExprUnion::Temp(Rc::new(arith.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Unary(unary) => {
-                e1 = ExprUnion::Temp(Box::new(unary.reduce(Rc::clone(&ir))));
+                e1 = ExprUnion::Temp(Rc::new(unary.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Access(acc) => {
-                e1 = ExprUnion::Temp(Box::new(acc.reduce(Rc::clone(&ir))));
+                e1 = ExprUnion::Temp(Rc::new(acc.reduce(Rc::clone(&ir))));
             }
             _ => (),
         }
 
         match e2 {
             ExprUnion::Arith(arith) => {
-                e2 = ExprUnion::Temp(Box::new(arith.reduce(Rc::clone(&ir))));
+                e2 = ExprUnion::Temp(Rc::new(arith.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Unary(unary) => {
-                e2 = ExprUnion::Temp(Box::new(unary.reduce(Rc::clone(&ir))));
+                e2 = ExprUnion::Temp(Rc::new(unary.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Access(acc) => {
-                e2 = ExprUnion::Temp(Box::new(acc.reduce(Rc::clone(&ir))));
+                e2 = ExprUnion::Temp(Rc::new(acc.reduce(Rc::clone(&ir))));
             }
             _ => (),
         }
@@ -342,13 +342,13 @@ impl Unary {
         let mut e = self.expr.clone();
         match e {
             ExprUnion::Arith(arith) => {
-                e = ExprUnion::Temp(Box::new(arith.reduce(Rc::clone(&ir))));
+                e = ExprUnion::Temp(Rc::new(arith.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Unary(unary) => {
-                e = ExprUnion::Temp(Box::new(unary.reduce(Rc::clone(&ir))));
+                e = ExprUnion::Temp(Rc::new(unary.reduce(Rc::clone(&ir))));
             }
             ExprUnion::Access(acc) => {
-                e = ExprUnion::Temp(Box::new(acc.reduce(Rc::clone(&ir))));
+                e = ExprUnion::Temp(Rc::new(acc.reduce(Rc::clone(&ir))));
             }
 
             _ => (),
@@ -414,7 +414,7 @@ impl ExprNode for Constant {
                     self.emit(format!("goto L{}", f), Rc::clone(&ir));
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -739,14 +739,14 @@ impl Access {
                 token: self.token.to_owned(),
                 temp_count: Rc::clone(&self.temp_count),
                 array: self.array.to_owned(),
-                index: ExprUnion::Temp(Box::new(arith.reduce(Rc::clone(&ir)))),
+                index: ExprUnion::Temp(Rc::new(arith.reduce(Rc::clone(&ir)))),
             },
             ExprUnion::Unary(unary) => Access {
                 tp: self.tp.to_owned(),
                 token: self.token.to_owned(),
                 temp_count: Rc::clone(&self.temp_count),
                 array: self.array.to_owned(),
-                index: ExprUnion::Temp(Box::new(unary.reduce(Rc::clone(&ir)))),
+                index: ExprUnion::Temp(Rc::new(unary.reduce(Rc::clone(&ir)))),
             },
             _ => Access {
                 tp: self.tp.to_owned(),
