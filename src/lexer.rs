@@ -1,8 +1,9 @@
 use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Array {
-    pub of: Box<Token>, //TODO: try to get rid of this
+    pub of: Rc<Token>, //TODO: try to get rid of this
     pub size: u32,
     pub width: u32,
 }
@@ -11,13 +12,13 @@ impl Array {
     pub fn new(size: u32, of: Token, tp_width: u32) -> Self {
         Array {
             size,
-            of: Box::new(of),
+            of: Rc::new(of),
             width: size * tp_width,
         }
     }
 
     pub fn array_to_string(&self) -> String {
-        format!("[ {} ] {}", self.size, self.of.to_owned().value_to_string())
+        format!("[ {} ] {}", self.size, self.of.value_to_string())
     }
 }
 
@@ -59,40 +60,40 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn value_to_string(self) -> String {
+    pub fn value_to_string(&self) -> String {
         match self {
             Token::Num(i) => format!("{}", i),
             Token::Real(i) => format!("{:?}", i),
-            Token::Id(s) => s,
-            Token::True(s) => s,
-            Token::False(s) => s,
-            Token::If(s) => s,
-            Token::Else(s) => s,
-            Token::While(s) => s,
-            Token::And(s) => s,
-            Token::Or(s) => s,
-            Token::Eql(s) => s,
-            Token::Ne(s) => s,
-            Token::Le(s) => s,
-            Token::Ge(s) => s,
-            Token::Lt(s) => s,
-            Token::Gt(s) => s,
-            Token::Asgn(s) => s,
-            Token::Not(s) => s,
-            Token::Add(s) => s,
-            Token::Sub(s) => s,
-            Token::Mul(s) => s,
-            Token::Div(s) => s,
-            Token::Lcb(s) => s,
-            Token::Rcb(s) => s,
-            Token::Lrb(s) => s,
-            Token::Rrb(s) => s,
-            Token::Lsb(s) => s,
-            Token::Rsb(s) => s,
-            Token::Scol(s) => s,
-            Token::Int(s) => s,
-            Token::Float(s) => s,
-            Token::Bool(s) => s,
+            Token::Id(s) => s.to_owned(),
+            Token::True(s) => s.to_owned(),
+            Token::False(s) => s.to_owned(),
+            Token::If(s) => s.to_owned(),
+            Token::Else(s) => s.to_owned(),
+            Token::While(s) => s.to_owned(),
+            Token::And(s) => s.to_owned(),
+            Token::Or(s) => s.to_owned(),
+            Token::Eql(s) => s.to_owned(),
+            Token::Ne(s) => s.to_owned(),
+            Token::Le(s) => s.to_owned(),
+            Token::Ge(s) => s.to_owned(),
+            Token::Lt(s) => s.to_owned(),
+            Token::Gt(s) => s.to_owned(),
+            Token::Asgn(s) => s.to_owned(),
+            Token::Not(s) => s.to_owned(),
+            Token::Add(s) => s.to_owned(),
+            Token::Sub(s) => s.to_owned(),
+            Token::Mul(s) => s.to_owned(),
+            Token::Div(s) => s.to_owned(),
+            Token::Lcb(s) => s.to_owned(),
+            Token::Rcb(s) => s.to_owned(),
+            Token::Lrb(s) => s.to_owned(),
+            Token::Rrb(s) => s.to_owned(),
+            Token::Lsb(s) => s.to_owned(),
+            Token::Rsb(s) => s.to_owned(),
+            Token::Scol(s) => s.to_owned(),
+            Token::Int(s) => s.to_owned(),
+            Token::Float(s) => s.to_owned(),
+            Token::Bool(s) => s.to_owned(),
             Token::Arr(a) => a.array_to_string(),
         }
     }

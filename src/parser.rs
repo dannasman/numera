@@ -69,7 +69,7 @@ impl Parser {
         }
 
         //save symbol table related to current scope
-        let saved_symbol_table = self.symbol_table.clone();
+        let saved_symbol_table = self.symbol_table.to_owned();
 
         let stmt = self.stmts();
         t = self.lexer.tokens.pop_front();
@@ -326,7 +326,7 @@ impl Parser {
                         }
 
                         let expr = self.boolean();
-                        self.symbol_table.insert(id_s, id.clone());
+                        self.symbol_table.insert(id_s, id.to_owned());
                         match expr {
                             Some(x) => {
                                 let set_stmt = Set::new(id, x);
@@ -467,7 +467,7 @@ impl Parser {
     fn boolean(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.join();
         while let Some(Token::Or(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -507,7 +507,7 @@ impl Parser {
     fn join(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.equality();
         while let Some(Token::And(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -547,7 +547,7 @@ impl Parser {
     fn equality(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.rel();
         while let Some(Token::Eql(s)) | Some(Token::Ne(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -609,7 +609,7 @@ impl Parser {
         if let Some(Token::Lt(s)) | Some(Token::Gt(s)) | Some(Token::Le(s)) | Some(Token::Ge(s)) =
             self.lexer.tokens.front()
         {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -699,7 +699,7 @@ impl Parser {
     fn expr(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.term();
         while let Some(Token::Add(s)) | Some(Token::Sub(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -757,7 +757,7 @@ impl Parser {
     fn term(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.unary();
         while let Some(Token::Mul(s)) | Some(Token::Div(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+            let token_string = s.to_owned();
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -816,7 +816,7 @@ impl Parser {
         let peek = self.lexer.tokens.front();
         match peek {
             Some(t) => {
-                if let Token::Sub(s) = t.clone() {
+                if let Token::Sub(s) = t.to_owned() {
                     self.lexer.tokens.pop_front();
                     self.get_line();
                     let expr = self.unary();
@@ -831,7 +831,7 @@ impl Parser {
                         }
                         None => None,
                     }
-                } else if let Token::Not(s) = t.clone() {
+                } else if let Token::Not(s) = t.to_owned() {
                     self.lexer.tokens.pop_front();
                     let line = self.get_line();
                     let expr = self.unary();
@@ -863,7 +863,7 @@ impl Parser {
     fn factor(&mut self) -> Option<ExprUnion> {
         let peek = self.lexer.tokens.front();
         match peek {
-            Some(t) => match t.clone() {
+            Some(t) => match t.to_owned() {
                 Token::Num(s) => {
                     let constant = ExprUnion::Constant(Rc::new(Constant::new(
                         Token::Int(String::from("int")),
@@ -918,7 +918,7 @@ impl Parser {
                     let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
-                            let id = ExprUnion::Id(Rc::new(sym.clone()));
+                            let id = ExprUnion::Id(Rc::new(sym.to_owned()));
                             if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
                                 let access = self.offset(sym.to_owned());
                                 return Some(ExprUnion::Access(Rc::new(access)));
@@ -959,7 +959,7 @@ impl Parser {
         }
 
         if let Token::Arr(array) = tp {
-            tp = *array.of;
+            tp = array.of.as_ref().to_owned();
         }
 
         match tp.get_width() {
@@ -995,7 +995,7 @@ impl Parser {
                                             }
 
                                             if let Token::Arr(array) = tp {
-                                                tp = *array.of;
+                                                tp = array.of.as_ref().to_owned();
                                             }
 
                                             match tp.get_width() {

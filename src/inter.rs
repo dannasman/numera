@@ -89,16 +89,16 @@ impl ExprUnion {
 
     fn get_type(&self) -> Token {
         match self {
-            ExprUnion::Id(id) => id.tp.clone(),
-            ExprUnion::Arith(arith) => arith.tp.clone(),
-            ExprUnion::Temp(temp) => temp.tp.clone(),
-            ExprUnion::Unary(unary) => unary.tp.clone(),
-            ExprUnion::Constant(constant) => constant.tp.clone(),
-            ExprUnion::Or(or) => or.tp.clone(),
-            ExprUnion::And(and) => and.tp.clone(),
-            ExprUnion::Not(not) => not.tp.clone(),
-            ExprUnion::Rel(rel) => rel.tp.clone(),
-            ExprUnion::Access(acc) => acc.tp.clone(),
+            ExprUnion::Id(id) => id.tp.to_owned(),
+            ExprUnion::Arith(arith) => arith.tp.to_owned(),
+            ExprUnion::Temp(temp) => temp.tp.to_owned(),
+            ExprUnion::Unary(unary) => unary.tp.to_owned(),
+            ExprUnion::Constant(constant) => constant.tp.to_owned(),
+            ExprUnion::Or(or) => or.tp.to_owned(),
+            ExprUnion::And(and) => and.tp.to_owned(),
+            ExprUnion::Not(not) => not.tp.to_owned(),
+            ExprUnion::Rel(rel) => rel.tp.to_owned(),
+            ExprUnion::Access(acc) => acc.tp.to_owned(),
         }
     }
 
@@ -184,7 +184,7 @@ impl Id {
 
 impl ExprNode for Id {
     fn to_string(&self, _ir: Rc<RefCell<String>>) -> String {
-        self.token.clone().value_to_string()
+        self.token.value_to_string()
     }
 }
 
@@ -199,8 +199,8 @@ pub struct Arith {
 
 impl Arith {
     pub fn gen(&self, ir: Rc<RefCell<String>>) -> Self {
-        let mut e1 = self.expr1.clone();
-        let mut e2 = self.expr2.clone();
+        let mut e1 = self.expr1.to_owned();
+        let mut e2 = self.expr2.to_owned();
 
         match e1 {
             ExprUnion::Arith(arith) => {
@@ -229,8 +229,8 @@ impl Arith {
         }
 
         Arith {
-            tp: self.tp.clone(),
-            op: self.op.clone(),
+            tp: self.tp.to_owned(),
+            op: self.op.to_owned(),
             temp_count: Rc::clone(&self.temp_count),
             expr1: e1,
             expr2: e2,
@@ -283,7 +283,7 @@ impl Arith {
     }
 
     fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.emit(
             format!(
                 "{} = {}",
@@ -303,7 +303,7 @@ impl ExprNode for Arith {
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e1 = self.expr1.gen_expr_string(Rc::clone(&ir));
         let e2 = self.expr2.gen_expr_string(Rc::clone(&ir));
-        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
+        format!("{} {} {}", e1, self.op.value_to_string(), e2)
     }
 }
 
@@ -339,7 +339,7 @@ pub struct Unary {
 
 impl Unary {
     pub fn gen(&self, ir: Rc<RefCell<String>>) -> Self {
-        let mut e = self.expr.clone();
+        let mut e = self.expr.to_owned();
         match e {
             ExprUnion::Arith(arith) => {
                 e = ExprUnion::Temp(Rc::new(arith.reduce(Rc::clone(&ir))));
@@ -353,7 +353,7 @@ impl Unary {
 
             _ => (),
         }
-        Unary::new(self.op.clone(), Rc::clone(&self.temp_count), e)
+        Unary::new(self.op.to_owned(), Rc::clone(&self.temp_count), e)
     }
     pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr: ExprUnion) -> Self {
         Unary {
@@ -365,7 +365,7 @@ impl Unary {
     }
 
     fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.emit(
             format!(
                 "{} = {}",
@@ -385,7 +385,7 @@ impl ExprNode for Unary {
 
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e = self.expr.gen_expr_string(Rc::clone(&ir));
-        format!("{} {}", self.op.clone().value_to_string(), e)
+        format!("{} {}", self.op.value_to_string(), e)
     }
 }
 
@@ -419,7 +419,7 @@ impl ExprNode for Constant {
     }
 
     fn to_string(&self, _ir: Rc<RefCell<String>>) -> String {
-        self.constant.clone().value_to_string()
+        self.constant.value_to_string()
     }
 }
 
@@ -443,7 +443,7 @@ impl Or {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
         self.emit(
             format!("{} = true", temp.to_string(Rc::clone(&ir))),
@@ -500,7 +500,7 @@ impl ExprNode for Or {
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e1 = self.expr1.gen_expr_string(Rc::clone(&ir));
         let e2 = self.expr2.gen_expr_string(Rc::clone(&ir));
-        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
+        format!("{} {} {}", e1, self.op.value_to_string(), e2)
     }
 }
 
@@ -524,7 +524,7 @@ impl And {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
         self.emit(
             format!("{} = true", temp.to_string(Rc::clone(&ir))),
@@ -581,7 +581,7 @@ impl ExprNode for And {
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e1 = self.expr1.gen_expr_string(Rc::clone(&ir));
         let e2 = self.expr2.gen_expr_string(Rc::clone(&ir));
-        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
+        format!("{} {} {}", e1, self.op.value_to_string(), e2)
     }
 }
 
@@ -603,7 +603,7 @@ impl Not {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
         self.emit(
             format!("{} = true", temp.to_string(Rc::clone(&ir))),
@@ -644,7 +644,7 @@ impl ExprNode for Not {
 
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e = self.expr.gen_expr_string(Rc::clone(&ir));
-        format!("{} {}", self.op.clone().value_to_string(), e)
+        format!("{} {}", self.op.value_to_string(), e)
     }
 }
 
@@ -667,7 +667,7 @@ impl Rel {
         let a = *l;
         drop(l);
 
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.jumping(0, f, Rc::clone(&ir));
         self.emit(
             format!("{} = true", temp.to_string(Rc::clone(&ir))),
@@ -709,7 +709,7 @@ impl ExprNode for Rel {
         let test = format!(
             "{} {} {}",
             self.expr1.gen_reduce_string(Rc::clone(&ir)),
-            self.op.clone().value_to_string(),
+            self.op.value_to_string(),
             self.expr2.gen_reduce_string(Rc::clone(&ir)),
         );
         self.emit_jumps(test, t, f, Rc::clone(&ir));
@@ -718,7 +718,7 @@ impl ExprNode for Rel {
     fn to_string(&self, ir: Rc<RefCell<String>>) -> String {
         let e1 = self.expr1.gen_expr_string(Rc::clone(&ir));
         let e2 = self.expr2.gen_expr_string(Rc::clone(&ir));
-        format!("{} {} {}", e1, self.op.clone().value_to_string(), e2)
+        format!("{} {} {}", e1, self.op.value_to_string(), e2)
     }
 }
 
@@ -767,7 +767,7 @@ impl Access {
         }
     }
     pub fn reduce(&self, ir: Rc<RefCell<String>>) -> Temp {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
+        let temp = Temp::new(self.tp.to_owned(), Rc::clone(&self.temp_count));
         self.emit(
             format!(
                 "{} = {}",
