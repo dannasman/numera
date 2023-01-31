@@ -358,7 +358,7 @@ impl Lexer {
 }
 
 #[cfg(test)]
-mod tests {
+mod lexer_tests {
     use super::*;
 
     #[test]

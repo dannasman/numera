@@ -1,6 +1,7 @@
 mod inter;
 mod lexer;
 mod parser;
+mod code;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -25,9 +26,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     parser.program(&input);
 
     let elapsed = now.elapsed();
+    let ir = parser.get_ir();
 
-    println!("{}", parser.get_ir());
+    println!("{}", ir);
 
     println!("Code compiled in {:?}", elapsed);
+
+    let mut code = code::CodeGen::new(ir);
+    code.gen();
+    let llvm_ir = code.llvm_ir;
+    println!("{}", llvm_ir);
     Ok(())
 }
