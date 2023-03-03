@@ -1019,3 +1019,57 @@ impl StmtNode for Break {
         self.emit(format!("goto L{}", after));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_id() {
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        assert_eq!(id.to_string(), "x");
+    }
+
+    #[test]
+    fn test_arith() -> Result<(), &'static str> {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
+        let artih = Arith::new(
+            Token::Add(String::from("+")),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+        assert_eq!(artih.to_string(), "1 + 2");
+        assert_eq!(artih.reduce().to_string(), "t1"); // currently reduce() also prints t1 = 1 + 2;
+        Ok(())
+    }
+
+    #[test]
+    fn test_temp() {
+        let temp = Temp::new(Token::Id(String::from("t1")), Rc::new(RefCell::new(0)));
+        assert_eq!(temp.to_string(), "t1");
+    }
+
+    #[test]
+    fn test_unary() {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let unary = Unary::new(
+            Token::Sub(String::from("-")),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+        );
+        assert_eq!(unary.to_string(), "- 1");
+        assert_eq!(unary.reduce().to_string(), "t1");
+    }
+
+    #[test]
+    fn test_constant() {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        assert_eq!(x.to_string(), "1");
+    }
+}
