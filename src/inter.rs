@@ -402,7 +402,7 @@ impl ExprNode for Constant {
                     self.emit(format!("goto L{}", f));
                 }
             }
-            _ => (), //TODO: palaa tähån kun funktioiden palautus on Result-tyyppiä
+            _ => (),
         }
     }
 
@@ -1063,6 +1063,7 @@ mod tests {
             Rc::new(RefCell::new(0)),
             ExprUnion::Constant(Box::new(x)),
         );
+
         assert_eq!(unary.to_string(), "- 1");
         assert_eq!(unary.reduce().to_string(), "t1");
     }
@@ -1071,5 +1072,86 @@ mod tests {
     fn test_constant() {
         let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
         assert_eq!(x.to_string(), "1");
+    }
+
+    #[test]
+    fn test_or() -> Result<(), &'static str> {
+        let x = Constant::new(
+            Token::Bool(String::from("bool")),
+            Token::True(String::from("true")),
+        );
+        let y = Constant::new(
+            Token::Bool(String::from("bool")),
+            Token::True(String::from("false")),
+        );
+        let or = Or::new(
+            Token::Or(String::from("||")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        assert_eq!(or.to_string(), "true || false");
+        assert_eq!(or.gen().to_string(), "t1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_and() -> Result<(), &'static str> {
+        let x = Constant::new(
+            Token::Bool(String::from("bool")),
+            Token::True(String::from("true")),
+        );
+        let y = Constant::new(
+            Token::Bool(String::from("bool")),
+            Token::True(String::from("false")),
+        );
+        let and = And::new(
+            Token::And(String::from("&&")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        assert_eq!(and.to_string(), "true && false");
+        assert_eq!(and.gen().to_string(), "t1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_not() -> Result<(), &'static str> {
+        let x = Constant::new(
+            Token::Bool(String::from("bool")),
+            Token::True(String::from("true")),
+        );
+        let not = Not::new(
+            Token::Not(String::from("!")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+        )?;
+
+        assert_eq!(not.to_string(), "! true");
+        assert_eq!(not.gen().to_string(), "t1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_rel() -> Result<(), &'static str> {
+        let x = Constant::new(Token::Int(String::from("bool")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("bool")), Token::Num(2));
+        let rel = Rel::new(
+            Token::Le(String::from("<=")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        assert_eq!(rel.to_string(), "1 <= 2");
+        assert_eq!(rel.gen().to_string(), "t1");
+        Ok(())
     }
 }
