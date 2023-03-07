@@ -1154,4 +1154,24 @@ mod tests {
         assert_eq!(rel.gen().to_string(), "t1");
         Ok(())
     }
+
+    #[test]
+    fn test_access() -> Result<(), &'static str> {
+        let array = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let index = Constant::new(Token::Int(String::from("bool")), Token::Num(0));
+        let access = Access::new(
+            Token::Int(String::from("int")),
+            Rc::new(RefCell::new(0)),
+            array,
+            ExprUnion::Constant(Box::from(index)),
+        );
+
+        assert_eq!(access.to_string(), "x [ 0 ]");
+        assert_eq!(access.gen().to_string(), "x [ 0 ]");
+        Ok(())
+    }
 }
