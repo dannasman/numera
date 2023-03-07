@@ -20,7 +20,7 @@ Example code snippet `foo.num` in root directory:
 ```
 Compile the code with
 ```
-cargo run foo.txt
+cargo run --release foo.num
 ```
 Output:
 ```
@@ -33,7 +33,6 @@ Output:
         i = i + 1;
     }
 }
-
 ----------compiling----------
 L1:
 	i = 0
@@ -49,8 +48,13 @@ L7:
 	i = i + 1
 	goto L3
 L2:
-Code compiled in 149.672µs
+Code compiled in 59.802µs
 
+```
+## Run tests
+Run tests by running the following command:
+```
+cargo test
 ```
 ## Grammar
 Grammar of the language:
