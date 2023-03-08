@@ -1202,4 +1202,40 @@ mod tests {
         )?;
         Ok(())
     }
+
+    #[test]
+    fn test_else() -> Result<(), &'static str> {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
+        let rel = Rel::new(
+            Token::Le(String::from("<=")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        let z1 = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let z2 = Constant::new(Token::Int(String::from("int")), Token::Num(4));
+        let id1 = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let id2 = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("y")),
+            0,
+        );
+        let set1 = Set::new(id1, ExprUnion::Constant(Box::new(z1)))?;
+        let set2 = Set::new(id2, ExprUnion::Constant(Box::new(z2)))?;
+
+        let _else_stmt = Else::new(
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Rel(Box::new(rel)),
+            StmtUnion::Set(Box::new(set1)),
+            StmtUnion::Set(Box::new(set2)),
+        )?;
+        Ok(())
+    }
 }
