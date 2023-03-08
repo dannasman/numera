@@ -1140,8 +1140,8 @@ mod tests {
 
     #[test]
     fn test_rel() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("bool")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("bool")), Token::Num(2));
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
         let rel = Rel::new(
             Token::Le(String::from("<=")),
             Rc::new(RefCell::new(0)),
@@ -1156,7 +1156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_access() -> Result<(), &'static str> {
+    fn test_access() {
         let array = Id::new(
             Token::Int(String::from("int")),
             Token::Id(String::from("x")),
@@ -1172,6 +1172,34 @@ mod tests {
 
         assert_eq!(access.to_string(), "x [ 0 ]");
         assert_eq!(access.gen().to_string(), "x [ 0 ]");
+        assert_eq!(access.reduce().to_string(), "t1");
+    }
+
+    #[test]
+    fn test_if() -> Result<(), &'static str> {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
+        let rel = Rel::new(
+            Token::Le(String::from("<=")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+
+        let _if_stmt = If::new(
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Rel(Box::new(rel)),
+            StmtUnion::Set(Box::new(set)),
+        )?;
         Ok(())
     }
 }
