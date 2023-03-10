@@ -1238,4 +1238,16 @@ mod tests {
         )?;
         Ok(())
     }
+
+    #[test]
+    fn test_set() -> Result<(), &'static str> {
+        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let _set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+        Ok(())
+    }
 }
