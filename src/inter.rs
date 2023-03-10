@@ -1023,6 +1023,7 @@ impl StmtNode for Break {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::Array;
 
     #[test]
     fn test_id() {
@@ -1157,11 +1158,12 @@ mod tests {
 
     #[test]
     fn test_access() {
-        let array = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
+        let size = 5;
+        let of = Token::Int(String::from("int"));
+        let w = 4;
+        let tp = Token::Arr(Array::new(size, of, w));
+
+        let array = Id::new(tp, Token::Id(String::from("x")), 0);
         let index = Constant::new(Token::Int(String::from("bool")), Token::Num(0));
         let access = Access::new(
             Token::Int(String::from("int")),
@@ -1240,6 +1242,34 @@ mod tests {
     }
 
     #[test]
+    fn test_while() -> Result<(), &'static str> {
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
+        let rel = Rel::new(
+            Token::Le(String::from("<=")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Box::new(y)),
+        )?;
+
+        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+
+        let mut while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
+        while_stmt.init(
+            Some(ExprUnion::Rel(Box::new(rel))),
+            Some(StmtUnion::Set(Box::new(set))),
+        )?;
+        Ok(())
+    }
+
+    #[test]
     fn test_set() -> Result<(), &'static str> {
         let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
         let id = Id::new(
@@ -1248,6 +1278,28 @@ mod tests {
             0,
         );
         let _set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_elem() -> Result<(), &'static str> {
+        let size = 5;
+        let of = Token::Int(String::from("int"));
+        let w = 4;
+        let tp = Token::Arr(Array::new(size, of, w));
+
+        let array = Id::new(tp, Token::Id(String::from("x")), 0);
+        let index = Constant::new(Token::Int(String::from("bool")), Token::Num(0));
+        let x = Access::new(
+            Token::Int(String::from("int")),
+            Rc::new(RefCell::new(0)),
+            array,
+            ExprUnion::Constant(Box::from(index)),
+        );
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+
+        let _set_elem = SetElem::new(x, ExprUnion::Constant(Box::new(y)))?;
+
         Ok(())
     }
 }
