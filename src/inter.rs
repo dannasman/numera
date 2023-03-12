@@ -1302,4 +1302,30 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_seq() -> Result<(), &'static str> {
+        let z1 = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let z2 = Constant::new(Token::Int(String::from("int")), Token::Num(4));
+        let id1 = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let id2 = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("y")),
+            0,
+        );
+        let set1 = Set::new(id1, ExprUnion::Constant(Box::new(z1)))?;
+        let set2 = Set::new(id2, ExprUnion::Constant(Box::new(z2)))?;
+
+        let _seq = Seq::new(
+            Rc::new(RefCell::new(0)),
+            Some(StmtUnion::Set(Box::new(set1))),
+            Some(StmtUnion::Set(Box::new(set2))),
+        );
+
+        Ok(())
+    }
 }
