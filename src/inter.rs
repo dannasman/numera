@@ -1328,4 +1328,11 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_break() -> Result<(), &'static str> {
+        let while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
+        let _break_stmt = Break::new(Some(StmtUnion::While(Box::new(while_stmt))))?;
+        Ok(())
+    }
 }
