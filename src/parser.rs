@@ -87,7 +87,7 @@ impl Parser {
                     let stmt1 = self.stmt();
                     let stmt2 = self.stmts();
                     let seq =
-                        StmtUnion::Seq(Box::new(Seq::new(Rc::clone(&self.label), stmt1, stmt2)));
+                        StmtUnion::Seq(Rc::new(Seq::new(Rc::clone(&self.label), stmt1, stmt2)));
                     Some(seq)
                 }
             },
@@ -116,7 +116,7 @@ impl Parser {
                             let enclosing = self.enclosing_stmt.borrow().to_owned();
                             match Break::new(enclosing) {
                                 Ok(new_break) => {
-                                    let break_stmt = StmtUnion::Break(Box::new(new_break));
+                                    let break_stmt = StmtUnion::Break(Rc::new(new_break));
                                     Some(break_stmt)
                                 }
                                 Err(s) => {
@@ -165,7 +165,7 @@ impl Parser {
                                                 let else_stmt =
                                                     Else::new(Rc::clone(&self.label), x, s1, s2);
                                                 match else_stmt {
-                                                    Ok(s) => Some(StmtUnion::Else(Box::new(s))),
+                                                    Ok(s) => Some(StmtUnion::Else(Rc::new(s))),
                                                     Err(e) => {
                                                         panic!("Error at line {}: {}", line, e);
                                                     }
@@ -188,7 +188,7 @@ impl Parser {
                                         Some(x) => {
                                             let if_stmt = If::new(Rc::clone(&self.label), x, s1);
                                             match if_stmt {
-                                                Ok(s) => Some(StmtUnion::If(Box::new(s))),
+                                                Ok(s) => Some(StmtUnion::If(Rc::new(s))),
                                                 Err(e) => {
                                                     panic!("Error at line {}: {}", line, e);
                                                 }
@@ -209,17 +209,17 @@ impl Parser {
                     self.lexer.tokens.pop_front();
                     let while_line = self.get_line();
                     let while_cell = Rc::new(RefCell::new(0));
-                    let while_stmt = StmtUnion::While(Box::new(While::new(
-                        Rc::clone(&self.label),
-                        Rc::clone(&while_cell),
-                    )));
-
-                    let enclosing_read = self.enclosing_stmt.borrow().to_owned();
-                    let mut enclosing_write = self.enclosing_stmt.borrow_mut();
-                    *enclosing_write = Some(StmtUnion::While(Box::new(While::new(
+                    let while_stmt = StmtUnion::While(Rc::new(RefCell::new(While::new(
                         Rc::clone(&self.label),
                         Rc::clone(&while_cell),
                     ))));
+
+                    let enclosing_read = self.enclosing_stmt.borrow().to_owned();
+                    let mut enclosing_write = self.enclosing_stmt.borrow_mut();
+                    *enclosing_write = Some(StmtUnion::While(Rc::new(RefCell::new(While::new(
+                        Rc::clone(&self.label),
+                        Rc::clone(&while_cell),
+                    )))));
                     drop(enclosing_write);
 
                     let mut next_t = self.lexer.tokens.pop_front();
@@ -239,8 +239,8 @@ impl Parser {
                     let stmt = self.stmt();
 
                     match while_stmt {
-                        StmtUnion::While(mut ws) => {
-                            if let Err(e) = ws.init(expr, stmt) {
+                        StmtUnion::While(ws) => {
+                            if let Err(e) = ws.borrow_mut().init(expr, stmt) {
                                 panic!("Error at line {}: {}", while_line, e);
                             }
                             let mut enclosing_write = self.enclosing_stmt.borrow_mut();
@@ -332,7 +332,7 @@ impl Parser {
                                         } else {
                                             panic!("Error at line {}: token did not match ;", line);
                                         }
-                                        Some(StmtUnion::Set(Box::new(set)))
+                                        Some(StmtUnion::Set(Rc::new(set)))
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -390,7 +390,7 @@ impl Parser {
                                                             line
                                                         );
                                                     }
-                                                    Some(StmtUnion::Set(Box::new(set)))
+                                                    Some(StmtUnion::Set(Rc::new(set)))
                                                 }
                                                 Err(e) => {
                                                     panic!("Error at line {}: {}", line, e);
@@ -425,7 +425,7 @@ impl Parser {
                                                                 line
                                                             );
                                                         }
-                                                        Some(StmtUnion::SetElem(Box::new(set)))
+                                                        Some(StmtUnion::SetElem(Rc::new(set)))
                                                     }
                                                     Err(e) => {
                                                         panic!("Error at line {}: {}", line, e);
@@ -478,7 +478,7 @@ impl Parser {
                             );
                             match or {
                                 Ok(o) => {
-                                    expr1 = Some(ExprUnion::Or(Box::new(o)));
+                                    expr1 = Some(ExprUnion::Or(Rc::new(o)));
                                 }
                                 Err(e) => {
                                     panic!("Error at line {}: {}", line, e);
@@ -518,7 +518,7 @@ impl Parser {
                             );
                             match and {
                                 Ok(a) => {
-                                    expr1 = Some(ExprUnion::And(Box::new(a)));
+                                    expr1 = Some(ExprUnion::And(Rc::new(a)));
                                 }
                                 Err(e) => {
                                     panic!("Error at line {}: {}", line, e);
@@ -559,7 +559,7 @@ impl Parser {
                                 );
                                 match eql {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -575,7 +575,7 @@ impl Parser {
                                 );
                                 match ne {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -621,7 +621,7 @@ impl Parser {
                                 );
                                 match lt {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -637,7 +637,7 @@ impl Parser {
                                 );
                                 match gt {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -653,7 +653,7 @@ impl Parser {
                                 );
                                 match le {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -669,7 +669,7 @@ impl Parser {
                                 );
                                 match ge {
                                     Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Box::new(rel)));
+                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -710,7 +710,7 @@ impl Parser {
                                 );
                                 match arith {
                                     Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Box::new(a)));
+                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -725,7 +725,7 @@ impl Parser {
                                 );
                                 match arith {
                                     Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Box::new(a)));
+                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -768,7 +768,7 @@ impl Parser {
                                 );
                                 match arith {
                                     Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Box::new(a)));
+                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -783,7 +783,7 @@ impl Parser {
                                 );
                                 match arith {
                                     Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Box::new(a)));
+                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
                                     }
                                     Err(e) => {
                                         panic!("Error at line {}: {}", line, e);
@@ -816,7 +816,7 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = ExprUnion::Unary(Box::new(Unary::new(
+                            let unary = ExprUnion::Unary(Rc::new(Unary::new(
                                 Token::Sub(s),
                                 Rc::clone(&self.temp_count),
                                 x,
@@ -838,7 +838,7 @@ impl Parser {
                                 x,
                             );
                             match unary {
-                                Ok(u) => Some(ExprUnion::Not(Box::new(u))),
+                                Ok(u) => Some(ExprUnion::Not(Rc::new(u))),
                                 Err(e) => {
                                     panic!("Error at line {}: {}", line, e);
                                 }
@@ -859,7 +859,7 @@ impl Parser {
         match peek {
             Some(t) => match t.clone() {
                 Token::Num(s) => {
-                    let constant = ExprUnion::Constant(Box::new(Constant::new(
+                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
                         Token::Int(String::from("int")),
                         Token::Num(s),
                     )));
@@ -868,7 +868,7 @@ impl Parser {
                     Some(constant)
                 }
                 Token::Real(s) => {
-                    let constant = ExprUnion::Constant(Box::new(Constant::new(
+                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
                         Token::Float(String::from("float")),
                         Token::Real(s),
                     )));
@@ -877,7 +877,7 @@ impl Parser {
                     Some(constant)
                 }
                 Token::True(s) => {
-                    let constant = ExprUnion::Constant(Box::new(Constant::new(
+                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
                         Token::Bool(String::from("bool")),
                         Token::True(s),
                     )));
@@ -886,7 +886,7 @@ impl Parser {
                     Some(constant)
                 }
                 Token::False(s) => {
-                    let constant = ExprUnion::Constant(Box::new(Constant::new(
+                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
                         Token::Bool(String::from("bool")),
                         Token::False(s),
                     )));
@@ -912,10 +912,10 @@ impl Parser {
                     let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
-                            let id = ExprUnion::Id(Box::new(sym.clone()));
+                            let id = ExprUnion::Id(Rc::new(sym.clone()));
                             if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
                                 let access = self.offset(sym.to_owned());
-                                return Some(ExprUnion::Access(Box::new(access)));
+                                return Some(ExprUnion::Access(Rc::new(access)));
                             }
                             Some(id)
                         }
@@ -965,7 +965,7 @@ impl Parser {
                             Token::Mul(String::from("*")),
                             Rc::clone(&self.temp_count),
                             i,
-                            ExprUnion::Constant(Box::new(w.to_owned())),
+                            ExprUnion::Constant(Rc::new(w.to_owned())),
                         );
                         match temp1 {
                             Ok(t1) => {
@@ -1003,17 +1003,17 @@ impl Parser {
                                                         Token::Mul(String::from("*")),
                                                         Rc::clone(&self.temp_count),
                                                         i_inner.to_owned(),
-                                                        ExprUnion::Constant(Box::new(w.to_owned())),
+                                                        ExprUnion::Constant(Rc::new(w.to_owned())),
                                                     );
                                                     match temp1 {
                                                         Ok(t1_inner) => {
                                                             let temp2 = Arith::new(
                                                                 Token::Add(String::from("+")),
                                                                 Rc::clone(&self.temp_count),
-                                                                ExprUnion::Arith(Box::new(
+                                                                ExprUnion::Arith(Rc::new(
                                                                     loc.to_owned(),
                                                                 )),
-                                                                ExprUnion::Arith(Box::new(
+                                                                ExprUnion::Arith(Rc::new(
                                                                     t1_inner.to_owned(),
                                                                 )),
                                                             );
@@ -1046,7 +1046,7 @@ impl Parser {
                                     tp.to_owned(),
                                     Rc::clone(&self.temp_count),
                                     a,
-                                    ExprUnion::Arith(Box::new(loc)),
+                                    ExprUnion::Arith(Rc::new(loc)),
                                 )
                             }
                             Err(e) => {

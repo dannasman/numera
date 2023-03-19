@@ -46,16 +46,16 @@ pub trait StmtNode {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ExprUnion {
-    Id(Box<Id>),
-    Arith(Box<Arith>),
-    Temp(Box<Temp>),
-    Unary(Box<Unary>),
-    Constant(Box<Constant>),
-    Or(Box<Or>),
-    And(Box<And>),
-    Not(Box<Not>),
-    Rel(Box<Rel>),
-    Access(Box<Access>),
+    Id(Rc<Id>),
+    Arith(Rc<Arith>),
+    Temp(Rc<Temp>),
+    Unary(Rc<Unary>),
+    Constant(Rc<Constant>),
+    Or(Rc<Or>),
+    And(Rc<And>),
+    Not(Rc<Not>),
+    Rel(Rc<Rel>),
+    Access(Rc<Access>),
 }
 
 impl ExprUnion {
@@ -122,22 +122,24 @@ impl ExprUnion {
 
 #[derive(Debug, Clone)]
 pub enum StmtUnion {
-    If(Box<If>),
-    Else(Box<Else>),
-    While(Box<While>),
-    Set(Box<Set>),
-    SetElem(Box<SetElem>),
-    Seq(Box<Seq>),
-    Break(Box<Break>),
+    If(Rc<If>),
+    Else(Rc<Else>),
+    While(Rc<RefCell<While>>),
+    Set(Rc<Set>),
+    SetElem(Rc<SetElem>),
+    Seq(Rc<Seq>),
+    Break(Rc<Break>),
 }
 
 impl StmtUnion {
     fn after(&self) -> u32 {
         match self {
             StmtUnion::While(while_stmt) => {
-                let after_borrow = while_stmt.after.borrow_mut();
+                let while_borrow = while_stmt.borrow_mut();
+                let after_borrow = while_borrow.after.borrow_mut();
                 let after = *after_borrow;
                 drop(after_borrow);
+                drop(while_borrow);
                 after
             }
             _ => 0,
@@ -147,7 +149,7 @@ impl StmtUnion {
         match self {
             StmtUnion::If(if_stmt) => if_stmt.emit_label(i),
             StmtUnion::Else(else_stmt) => else_stmt.emit_label(i),
-            StmtUnion::While(while_stmt) => while_stmt.emit_label(i),
+            StmtUnion::While(while_stmt) => while_stmt.borrow().emit_label(i),
             StmtUnion::Set(set_stmt) => set_stmt.emit_label(i),
             StmtUnion::SetElem(set_stmt) => set_stmt.emit_label(i),
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
@@ -158,7 +160,7 @@ impl StmtUnion {
         match self {
             StmtUnion::If(if_stmt) => if_stmt.gen(b, a),
             StmtUnion::Else(else_stmt) => else_stmt.gen(b, a),
-            StmtUnion::While(while_stmt) => while_stmt.gen(b, a),
+            StmtUnion::While(while_stmt) => while_stmt.borrow().gen(b, a),
             StmtUnion::Set(set_stmt) => set_stmt.gen(b, a),
             StmtUnion::SetElem(set_stmt) => set_stmt.gen(b, a),
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a),
@@ -206,26 +208,26 @@ impl Arith {
 
         match e1 {
             ExprUnion::Arith(arith) => {
-                e1 = ExprUnion::Temp(Box::new(arith.reduce()));
+                e1 = ExprUnion::Temp(Rc::new(arith.reduce()));
             }
             ExprUnion::Unary(unary) => {
-                e1 = ExprUnion::Temp(Box::new(unary.reduce()));
+                e1 = ExprUnion::Temp(Rc::new(unary.reduce()));
             }
             ExprUnion::Access(acc) => {
-                e1 = ExprUnion::Temp(Box::new(acc.reduce()));
+                e1 = ExprUnion::Temp(Rc::new(acc.reduce()));
             }
             _ => (),
         }
 
         match e2 {
             ExprUnion::Arith(arith) => {
-                e2 = ExprUnion::Temp(Box::new(arith.reduce()));
+                e2 = ExprUnion::Temp(Rc::new(arith.reduce()));
             }
             ExprUnion::Unary(unary) => {
-                e2 = ExprUnion::Temp(Box::new(unary.reduce()));
+                e2 = ExprUnion::Temp(Rc::new(unary.reduce()));
             }
             ExprUnion::Access(acc) => {
-                e2 = ExprUnion::Temp(Box::new(acc.reduce()));
+                e2 = ExprUnion::Temp(Rc::new(acc.reduce()));
             }
             _ => (),
         }
@@ -337,13 +339,13 @@ impl Unary {
         let mut e = self.expr.clone();
         match e {
             ExprUnion::Arith(arith) => {
-                e = ExprUnion::Temp(Box::new(arith.reduce()));
+                e = ExprUnion::Temp(Rc::new(arith.reduce()));
             }
             ExprUnion::Unary(unary) => {
-                e = ExprUnion::Temp(Box::new(unary.reduce()));
+                e = ExprUnion::Temp(Rc::new(unary.reduce()));
             }
             ExprUnion::Access(acc) => {
-                e = ExprUnion::Temp(Box::new(acc.reduce()));
+                e = ExprUnion::Temp(Rc::new(acc.reduce()));
             }
 
             _ => (),
@@ -703,14 +705,14 @@ impl Access {
                 token: self.token.to_owned(),
                 temp_count: Rc::clone(&self.temp_count),
                 array: self.array.to_owned(),
-                index: ExprUnion::Temp(Box::new(arith.reduce())),
+                index: ExprUnion::Temp(Rc::new(arith.reduce())),
             },
             ExprUnion::Unary(unary) => Access {
                 tp: self.tp.to_owned(),
                 token: self.token.to_owned(),
                 temp_count: Rc::clone(&self.temp_count),
                 array: self.array.to_owned(),
-                index: ExprUnion::Temp(Box::new(unary.reduce())),
+                index: ExprUnion::Temp(Rc::new(unary.reduce())),
             },
             _ => Access {
                 tp: self.tp.to_owned(),
@@ -1042,8 +1044,8 @@ mod tests {
         let artih = Arith::new(
             Token::Add(String::from("+")),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
         assert_eq!(artih.to_string(), "1 + 2");
         assert_eq!(artih.reduce().to_string(), "t1"); // currently reduce() also prints t1 = 1 + 2;
@@ -1062,7 +1064,7 @@ mod tests {
         let unary = Unary::new(
             Token::Sub(String::from("-")),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Rc::new(x)),
         );
 
         assert_eq!(unary.to_string(), "- 1");
@@ -1089,8 +1091,8 @@ mod tests {
             Token::Or(String::from("||")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         assert_eq!(or.to_string(), "true || false");
@@ -1112,8 +1114,8 @@ mod tests {
             Token::And(String::from("&&")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         assert_eq!(and.to_string(), "true && false");
@@ -1131,7 +1133,7 @@ mod tests {
             Token::Not(String::from("!")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
+            ExprUnion::Constant(Rc::new(x)),
         )?;
 
         assert_eq!(not.to_string(), "! true");
@@ -1147,8 +1149,8 @@ mod tests {
             Token::Le(String::from("<=")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         assert_eq!(rel.to_string(), "1 <= 2");
@@ -1169,7 +1171,7 @@ mod tests {
             Token::Int(String::from("int")),
             Rc::new(RefCell::new(0)),
             array,
-            ExprUnion::Constant(Box::from(index)),
+            ExprUnion::Constant(Rc::from(index)),
         );
 
         assert_eq!(access.to_string(), "x [ 0 ]");
@@ -1185,8 +1187,8 @@ mod tests {
             Token::Le(String::from("<=")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
@@ -1195,12 +1197,12 @@ mod tests {
             Token::Id(String::from("x")),
             0,
         );
-        let set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
 
         let _if_stmt = If::new(
             Rc::new(RefCell::new(0)),
-            ExprUnion::Rel(Box::new(rel)),
-            StmtUnion::Set(Box::new(set)),
+            ExprUnion::Rel(Rc::new(rel)),
+            StmtUnion::Set(Rc::new(set)),
         )?;
         Ok(())
     }
@@ -1213,8 +1215,8 @@ mod tests {
             Token::Le(String::from("<=")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         let z1 = Constant::new(Token::Int(String::from("int")), Token::Num(3));
@@ -1229,14 +1231,14 @@ mod tests {
             Token::Id(String::from("y")),
             0,
         );
-        let set1 = Set::new(id1, ExprUnion::Constant(Box::new(z1)))?;
-        let set2 = Set::new(id2, ExprUnion::Constant(Box::new(z2)))?;
+        let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
+        let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
 
         let _else_stmt = Else::new(
             Rc::new(RefCell::new(0)),
-            ExprUnion::Rel(Box::new(rel)),
-            StmtUnion::Set(Box::new(set1)),
-            StmtUnion::Set(Box::new(set2)),
+            ExprUnion::Rel(Rc::new(rel)),
+            StmtUnion::Set(Rc::new(set1)),
+            StmtUnion::Set(Rc::new(set2)),
         )?;
         Ok(())
     }
@@ -1249,8 +1251,8 @@ mod tests {
             Token::Le(String::from("<=")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Box::new(x)),
-            ExprUnion::Constant(Box::new(y)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
         )?;
 
         let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
@@ -1259,12 +1261,12 @@ mod tests {
             Token::Id(String::from("x")),
             0,
         );
-        let set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
 
         let mut while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
         while_stmt.init(
-            Some(ExprUnion::Rel(Box::new(rel))),
-            Some(StmtUnion::Set(Box::new(set))),
+            Some(ExprUnion::Rel(Rc::new(rel))),
+            Some(StmtUnion::Set(Rc::new(set))),
         )?;
         Ok(())
     }
@@ -1277,7 +1279,7 @@ mod tests {
             Token::Id(String::from("x")),
             0,
         );
-        let _set = Set::new(id, ExprUnion::Constant(Box::new(z)))?;
+        let _set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
         Ok(())
     }
 
@@ -1294,11 +1296,11 @@ mod tests {
             Token::Int(String::from("int")),
             Rc::new(RefCell::new(0)),
             array,
-            ExprUnion::Constant(Box::from(index)),
+            ExprUnion::Constant(Rc::from(index)),
         );
         let y = Constant::new(Token::Int(String::from("int")), Token::Num(3));
 
-        let _set_elem = SetElem::new(x, ExprUnion::Constant(Box::new(y)))?;
+        let _set_elem = SetElem::new(x, ExprUnion::Constant(Rc::new(y)))?;
 
         Ok(())
     }
@@ -1317,13 +1319,13 @@ mod tests {
             Token::Id(String::from("y")),
             0,
         );
-        let set1 = Set::new(id1, ExprUnion::Constant(Box::new(z1)))?;
-        let set2 = Set::new(id2, ExprUnion::Constant(Box::new(z2)))?;
+        let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
+        let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
 
         let _seq = Seq::new(
             Rc::new(RefCell::new(0)),
-            Some(StmtUnion::Set(Box::new(set1))),
-            Some(StmtUnion::Set(Box::new(set2))),
+            Some(StmtUnion::Set(Rc::new(set1))),
+            Some(StmtUnion::Set(Rc::new(set2))),
         );
 
         Ok(())
@@ -1332,7 +1334,7 @@ mod tests {
     #[test]
     fn test_break() -> Result<(), &'static str> {
         let while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
-        let _break_stmt = Break::new(Some(StmtUnion::While(Box::new(while_stmt))))?;
+        let _break_stmt = Break::new(Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
         Ok(())
     }
 }
