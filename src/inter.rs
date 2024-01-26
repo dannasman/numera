@@ -129,6 +129,7 @@ pub enum StmtUnion {
     SetElem(Rc<SetElem>),
     Seq(Rc<Seq>),
     Break(Rc<Break>),
+    Function(Rc<Function>),
 }
 
 impl StmtUnion {
@@ -154,6 +155,7 @@ impl StmtUnion {
             StmtUnion::SetElem(set_stmt) => set_stmt.emit_label(i),
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
             StmtUnion::Break(break_stmt) => break_stmt.emit_label(i),
+            StmtUnion::Function(function_stmt) => function_stmt.emit_label(i),
         }
     }
     pub fn gen(&self, b: u32, a: u32) {
@@ -165,6 +167,7 @@ impl StmtUnion {
             StmtUnion::SetElem(set_stmt) => set_stmt.gen(b, a),
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a),
             StmtUnion::Break(break_stmt) => break_stmt.gen(b, a),
+            StmtUnion::Function(function_stmt) => function_stmt.gen(b, a),
         }
     }
 }
@@ -1022,6 +1025,51 @@ impl StmtNode for Break {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Function {
+    label: Rc<RefCell<u32>>,
+    name: String,
+    params: Vec<Id>,
+    stmt: Option<StmtUnion>
+}
+
+impl Function {
+    pub fn new(label: Rc<RefCell<u32>>, name: String, params: Vec<Id>, stmt: Option<StmtUnion>) -> Result<Self, &'static str> {
+        Ok(Self {
+            label,
+            name,
+            params,
+            stmt
+        })
+    }
+}
+
+impl StmtNode for Function {
+    fn gen(&self, _b: u32, _a: u32) {
+        println!("{}:", self.name);
+        
+        self.params.iter().for_each(|id| {
+            let w = id.tp.get_width().expect(&format!("failed to read width of {}", id.to_string()));
+            self.emit(format!("movl {}(%sp) {}", w, id.to_string()));
+        });
+     
+        let mut l = self.label.borrow_mut();
+        *l += 1;
+        let begin = *l;
+        *l += 1;
+        let after = *l;
+        drop(l);
+
+        self.emit_label(begin);
+        if let Some(s) = &self.stmt {
+            s.gen(begin, after)
+        }
+        self.emit_label(after);
+        
+        self.emit(String::from("ret"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1335,6 +1383,50 @@ mod tests {
     fn test_break() -> Result<(), &'static str> {
         let while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
         let _break_stmt = Break::new(Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_function() -> Result<(), &'static str> {
+        let label = Rc::new(RefCell::new(1 as u32));
+        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
+        let rel = Rel::new(
+            Token::Le(String::from("<=")),
+            Rc::new(RefCell::new(0)),
+            Rc::new(RefCell::new(0)),
+            ExprUnion::Constant(Rc::new(x)),
+            ExprUnion::Constant(Rc::new(y)),
+        )?;
+
+        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let set = Set::new(id.clone(), ExprUnion::Constant(Rc::new(z)))?;
+
+        let mut while_stmt = While::new(Rc::clone(&label), Rc::new(RefCell::new(1)));
+        while_stmt.init(
+            Some(ExprUnion::Rel(Rc::new(rel))),
+            Some(StmtUnion::Set(Rc::new(set))),
+        )?;
+
+        let function_stmt = Function::new(Rc::clone(&label), String::from("f"), vec![id], Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
+
+
+        let mut l = label.borrow_mut();
+        *l += 1;
+        let begin = *l;
+        *l += 1;
+        let after = *l;
+        drop(l);
+
+        function_stmt.emit_label(begin);
+        function_stmt.gen(begin, after);
+        function_stmt.emit_label(after);
+
         Ok(())
     }
 }
