@@ -358,9 +358,19 @@ impl Parser {
                     } else {
                         let expr = self.expr();
 
+                        self.get_line();
                         if let Some(Token::Scol(_)) = self.lexer.tokens.pop_front() {
                         } else {
                             panic!("Error at line {}: token did not match ;", return_line);
+                        }
+
+                        self.get_line();
+                        if let Some(Token::Rcb(_)) = self.lexer.tokens.front() {
+                        } else {
+                            panic!(
+                                "Error at line {}: body should end after return",
+                                return_line
+                            );
                         }
 
                         let return_stmt = StmtUnion::Return(Rc::new(Return::new(expr)));
