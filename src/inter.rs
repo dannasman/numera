@@ -175,7 +175,7 @@ impl StmtUnion {
 #[derive(Debug, Clone)]
 pub struct Id {
     pub tp: Token, //type
-    token: Token,
+    pub token: Token,
     _offset: u32,
 }
 
@@ -1030,29 +1030,37 @@ pub struct Function {
     label: Rc<RefCell<u32>>,
     name: String,
     params: Vec<Id>,
-    stmt: Option<StmtUnion>
+    stmt: Option<StmtUnion>,
 }
 
 impl Function {
-    pub fn new(label: Rc<RefCell<u32>>, name: String, params: Vec<Id>, stmt: Option<StmtUnion>) -> Result<Self, &'static str> {
-        Ok(Self {
+    pub fn new(
+        label: Rc<RefCell<u32>>,
+        name: String,
+        params: Vec<Id>,
+        stmt: Option<StmtUnion>,
+    ) -> Self {
+        Self {
             label,
             name,
             params,
-            stmt
-        })
+            stmt,
+        }
     }
 }
 
 impl StmtNode for Function {
     fn gen(&self, _b: u32, _a: u32) {
         println!("{}:", self.name);
-        
+
         self.params.iter().for_each(|id| {
-            let w = id.tp.get_width().expect(&format!("failed to read width of {}", id.to_string()));
+            let w = id
+                .tp
+                .get_width()
+                .unwrap_or_else(|_| panic!("failed to read width of {}", id.to_string()));
             self.emit(format!("movl {}(%sp) {}", w, id.to_string()));
         });
-     
+
         let mut l = self.label.borrow_mut();
         *l += 1;
         let begin = *l;
@@ -1065,7 +1073,7 @@ impl StmtNode for Function {
             s.gen(begin, after)
         }
         self.emit_label(after);
-        
+
         self.emit(String::from("ret"));
     }
 }
@@ -1413,8 +1421,12 @@ mod tests {
             Some(StmtUnion::Set(Rc::new(set))),
         )?;
 
-        let function_stmt = Function::new(Rc::clone(&label), String::from("f"), vec![id], Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
-
+        let function_stmt = Function::new(
+            Rc::clone(&label),
+            String::from("f"),
+            vec![id],
+            Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))),
+        );
 
         let mut l = label.borrow_mut();
         *l += 1;

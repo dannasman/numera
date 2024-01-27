@@ -1,6 +1,6 @@
 use super::inter::{
-    Access, And, Arith, Break, Constant, Else, ExprUnion, Id, If, Not, Or, Rel, Seq, Set, SetElem,
-    StmtUnion, Unary, While,
+    Access, And, Arith, Break, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel, Seq, Set,
+    SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
 use std::cell::RefCell;
@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 pub struct Parser {
     enclosing_stmt: Rc<RefCell<Option<StmtUnion>>>,
+    declarations: Vec<StmtUnion>,
     label: Rc<RefCell<u32>>,
     lexer: Lexer,
     symbol_table: HashMap<String, Id>,
@@ -20,6 +21,7 @@ impl Parser {
     pub fn new(lexer: Lexer) -> Self {
         Parser {
             enclosing_stmt: Rc::new(RefCell::new(None)),
+            declarations: Vec::new(),
             label: Rc::new(RefCell::new(0)),
             lexer,
             symbol_table: HashMap::new(),
@@ -47,6 +49,10 @@ impl Parser {
             *l += 1;
             let after = *l;
             drop(l);
+
+            self.declarations.iter().for_each(|s| {
+                s.gen(begin, after);
+            });
 
             s.emit_label(begin);
             s.gen(begin, after);
@@ -256,10 +262,126 @@ impl Parser {
                         }
                     }
                 }
+                Token::Def(_) => {
+                    self.lexer.tokens.pop_front();
+                    let function_line = self.get_line();
+                    if let Some(tp @ Token::Int(_))
+                    | Some(tp @ Token::Float(_))
+                    | Some(tp @ Token::Bool(_)) = self.lexer.tokens.pop_front()
+                    {
+                        self.get_line();
+                        if let Some(Token::Id(id_s)) = self.lexer.tokens.pop_front() {
+                            self.get_line();
+                            if self.symbol_table.get_mut(&id_s).is_some() {
+                                panic!(
+                                    "Error at line {}: function {} already declared",
+                                    function_line, id_s
+                                );
+                            } else {
+                                let id =
+                                    Id::new(tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
+                                match tp.get_width() {
+                                    Ok(w) => self.used += w,
+                                    Err(e) => panic!("Error at line {}: {}", function_line, e),
+                                }
+                                self.symbol_table.insert(id_s.to_owned(), id.clone());
+                                self.get_line();
+                                if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match (",
+                                        function_line
+                                    );
+                                }
+                                let params = self.params();
+                                self.get_line();
+                                if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match )",
+                                        function_line
+                                    );
+                                }
+
+                                let saved_symbol_table = self.symbol_table.clone();
+
+                                params.iter().for_each(|p| {
+                                    self.symbol_table
+                                        .insert(p.token.to_owned().value_to_string(), p.clone());
+                                });
+
+                                self.get_line();
+                                if let Some(Token::Lcb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match {{",
+                                        function_line
+                                    );
+                                }
+
+                                let stmt = self.stmts();
+
+                                self.get_line();
+                                if let Some(Token::Rcb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match }}",
+                                        function_line
+                                    );
+                                }
+
+                                self.symbol_table = saved_symbol_table;
+
+                                let function_stmt = StmtUnion::Function(Rc::new(Function::new(
+                                    Rc::clone(&self.label),
+                                    id_s,
+                                    params,
+                                    stmt,
+                                )));
+                                self.declarations.push(function_stmt);
+                                None
+                            }
+                        } else {
+                            panic!("Error at line {}: failed to define function due to missing function name", function_line)
+                        }
+                    } else {
+                        panic!("Error at line {}: failed to define function due to missing function type", function_line);
+                    }
+                }
                 _ => self.assign(),
             },
             None => None,
         }
+    }
+
+    fn params(&mut self) -> Vec<Id> {
+        let params_line = self.get_line();
+        let mut params_vec: Vec<Id> = Vec::new();
+        while let Some(tp @ Token::Int(_))
+        | Some(tp @ Token::Float(_))
+        | Some(tp @ Token::Bool(_)) = self.lexer.tokens.front()
+        {
+            let param_tp = tp.to_owned();
+            self.lexer.tokens.pop_front();
+            self.get_line();
+            if let Some(Token::Id(id_s)) = self.lexer.tokens.front() {
+                let id_string = id_s.to_owned();
+                self.lexer.tokens.pop_front();
+                self.get_line();
+                if self.symbol_table.get_mut(&id_string).is_some() {
+                    panic!(
+                        "Error at line {}: parameter {} already declared",
+                        params_line, id_string
+                    );
+                } else {
+                    let id = Id::new(param_tp, Token::Id(id_string), self.used);
+                    params_vec.push(id);
+                }
+            } else {
+                panic!("Error at line {}: missing parameter name", params_line);
+            }
+        }
+        params_vec
     }
 
     fn dims(&mut self, tp: Token) -> Token {

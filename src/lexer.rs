@@ -418,6 +418,9 @@ mod tests {
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
-        assert_eq!(r#"[Def("def"), Int("int"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")")]"#, output)
+        assert_eq!(
+            r#"[Def("def"), Int("int"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")")]"#,
+            output
+        )
     }
 }
