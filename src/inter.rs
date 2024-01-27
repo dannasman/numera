@@ -89,6 +89,21 @@ impl ExprUnion {
         }
     }
 
+    fn reduce(&self) -> ExprUnion {
+        match self {
+            ExprUnion::Id(id) => ExprUnion::Id(id.to_owned()),
+            ExprUnion::Arith(arith) => ExprUnion::Temp(Rc::new(arith.reduce())),
+            ExprUnion::Temp(temp) => ExprUnion::Temp(temp.to_owned()),
+            ExprUnion::Unary(unary) => ExprUnion::Temp(Rc::new(unary.reduce())),
+            ExprUnion::Constant(constant) => ExprUnion::Constant(constant.to_owned()),
+            ExprUnion::Or(or) => ExprUnion::Temp(Rc::new(or.gen())),
+            ExprUnion::And(and) => ExprUnion::Temp(Rc::new(and.gen())),
+            ExprUnion::Not(not) => ExprUnion::Temp(Rc::new(not.gen())),
+            ExprUnion::Rel(rel) => ExprUnion::Temp(Rc::new(rel.gen())),
+            ExprUnion::Access(acc) => ExprUnion::Temp(Rc::new(acc.reduce())),
+        }
+    }
+
     fn get_type(&self) -> Token {
         match self {
             ExprUnion::Id(id) => id.tp.clone(),
@@ -130,6 +145,7 @@ pub enum StmtUnion {
     Seq(Rc<Seq>),
     Break(Rc<Break>),
     Function(Rc<Function>),
+    Return(Rc<Return>),
 }
 
 impl StmtUnion {
@@ -156,6 +172,7 @@ impl StmtUnion {
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
             StmtUnion::Break(break_stmt) => break_stmt.emit_label(i),
             StmtUnion::Function(function_stmt) => function_stmt.emit_label(i),
+            StmtUnion::Return(return_stmt) => return_stmt.emit_label(i),
         }
     }
     pub fn gen(&self, b: u32, a: u32) {
@@ -168,6 +185,7 @@ impl StmtUnion {
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a),
             StmtUnion::Break(break_stmt) => break_stmt.gen(b, a),
             StmtUnion::Function(function_stmt) => function_stmt.gen(b, a),
+            StmtUnion::Return(return_stmt) => return_stmt.gen(b, a),
         }
     }
 }
@@ -1058,7 +1076,7 @@ impl StmtNode for Function {
                 .tp
                 .get_width()
                 .unwrap_or_else(|_| panic!("failed to read width of {}", id.to_string()));
-            self.emit(format!("movl {}(%sp) {}", w, id.to_string()));
+            self.emit(format!("pop {} {}(%sp)", id.to_string(), w));
         });
 
         let mut l = self.label.borrow_mut();
@@ -1074,6 +1092,30 @@ impl StmtNode for Function {
         }
         self.emit_label(after);
 
+        //self.emit(String::from("ret"));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Return {
+    expr: Option<ExprUnion>,
+}
+
+impl Return {
+    pub fn new(expr: Option<ExprUnion>) -> Self {
+        Self { expr }
+    }
+}
+
+impl StmtNode for Return {
+    fn gen(&self, _b: u32, _a: u32) {
+        if let Some(e) = &self.expr {
+            let reduced = e.reduce();
+            let w = reduced.get_type().get_width().unwrap_or_else(|_| {
+                panic!("failed to read width of {}", reduced.gen_expr_string())
+            });
+            self.emit(format!("push {} {}(%sp)", reduced.gen_expr_string(), w));
+        }
         self.emit(String::from("ret"));
     }
 }

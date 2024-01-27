@@ -57,6 +57,7 @@ pub enum Token {
     Bool(String),
     Arr(Array),
     Def(String),
+    Return(String),
 }
 
 impl Token {
@@ -96,6 +97,7 @@ impl Token {
             Token::Bool(s) => s,
             Token::Arr(a) => a.array_to_string(),
             Token::Def(s) => s,
+            Token::Return(s) => s,
         }
     }
 
@@ -132,6 +134,10 @@ impl Lexer {
                 (String::from("float"), Token::Float(String::from("float"))),
                 (String::from("bool"), Token::Bool(String::from("bool"))),
                 (String::from("def"), Token::Def(String::from("def"))),
+                (
+                    String::from("return"),
+                    Token::Return(String::from("return")),
+                ),
             ]),
             current_line: 1,
             lines: VecDeque::new(),
@@ -414,12 +420,12 @@ mod tests {
 
     #[test]
     fn correct_function_definition_handling() {
-        let input = String::from("def int f(int a, int b)");
+        let input = String::from("def int f(int a, int b)\n {\nreturn a + b;\n}");
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
-            r#"[Def("def"), Int("int"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")")]"#,
+            r#"[Def("def"), Int("int"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")"), Lcb("{"), Return("return"), Id("a"), Add("+"), Id("b"), Scol(";"), Rcb("}")]"#,
             output
         )
     }

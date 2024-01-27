@@ -1,6 +1,6 @@
 use super::inter::{
-    Access, And, Arith, Break, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel, Seq, Set,
-    SetElem, StmtUnion, Unary, While,
+    Access, And, Arith, Break, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel, Return,
+    Seq, Set, SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
 use std::cell::RefCell;
@@ -346,6 +346,25 @@ impl Parser {
                         }
                     } else {
                         panic!("Error at line {}: failed to define function due to missing function type", function_line);
+                    }
+                }
+                Token::Return(_) => {
+                    self.lexer.tokens.pop_front();
+                    let return_line = self.get_line();
+
+                    if let Some(Token::Scol(_)) = self.lexer.tokens.front() {
+                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(None)));
+                        Some(return_stmt)
+                    } else {
+                        let expr = self.expr();
+
+                        if let Some(Token::Scol(_)) = self.lexer.tokens.pop_front() {
+                        } else {
+                            panic!("Error at line {}: token did not match ;", return_line);
+                        }
+
+                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(expr)));
+                        Some(return_stmt)
                     }
                 }
                 _ => self.assign(),
