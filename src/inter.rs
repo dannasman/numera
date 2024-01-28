@@ -2,8 +2,6 @@ use super::lexer::Token;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-//TODO: lisää tyypit viela statementseihin ja sen jälkeen siirry parseriin
-
 pub trait ExprNode {
     fn emit_label(&self, i: u32) {
         println!("L{}:", i);
@@ -56,6 +54,7 @@ pub enum ExprUnion {
     Not(Rc<Not>),
     Rel(Rc<Rel>),
     Access(Rc<Access>),
+    Call(Rc<Call>),
 }
 
 impl ExprUnion {
@@ -71,6 +70,7 @@ impl ExprUnion {
             ExprUnion::Not(not) => not.gen().to_string(),
             ExprUnion::Rel(rel) => rel.gen().to_string(),
             ExprUnion::Access(acc) => acc.to_string(),
+            ExprUnion::Call(call) => call.reduce().to_string(),
         }
     }
 
@@ -86,6 +86,7 @@ impl ExprUnion {
             ExprUnion::Not(not) => not.gen().to_string(),
             ExprUnion::Rel(rel) => rel.gen().to_string(),
             ExprUnion::Access(acc) => acc.reduce().to_string(),
+            ExprUnion::Call(call) => call.reduce().to_string(),
         }
     }
 
@@ -101,6 +102,7 @@ impl ExprUnion {
             ExprUnion::Not(not) => ExprUnion::Temp(Rc::new(not.gen())),
             ExprUnion::Rel(rel) => ExprUnion::Temp(Rc::new(rel.gen())),
             ExprUnion::Access(acc) => ExprUnion::Temp(Rc::new(acc.reduce())),
+            ExprUnion::Call(call) => ExprUnion::Temp(Rc::new(call.reduce())),
         }
     }
 
@@ -116,6 +118,7 @@ impl ExprUnion {
             ExprUnion::Not(not) => not.tp.clone(),
             ExprUnion::Rel(rel) => rel.tp.clone(),
             ExprUnion::Access(acc) => acc.tp.clone(),
+            ExprUnion::Call(call) => call.id.tp.clone(),
         }
     }
 
@@ -131,6 +134,7 @@ impl ExprUnion {
             ExprUnion::Not(not) => not.jumping(t, f),
             ExprUnion::Rel(rel) => rel.jumping(t, f),
             ExprUnion::Access(acc) => acc.jumping(t, f),
+            ExprUnion::Call(call) => call.jumping(t, f),
         }
     }
 }
@@ -210,6 +214,49 @@ impl Id {
 impl ExprNode for Id {
     fn to_string(&self) -> String {
         self.token.clone().value_to_string()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Call {
+    id: Id,
+    params: Vec<ExprUnion>,
+    temp_count: Rc<RefCell<u32>>,
+}
+
+impl Call {
+    pub fn new(id: Id, params: Vec<ExprUnion>, temp_count: Rc<RefCell<u32>>) -> Self {
+        Self {
+            id,
+            params,
+            temp_count,
+        }
+    }
+
+    fn reduce(&self) -> Temp {
+        self.params.iter().for_each(|e| {
+            let reduced = e.reduce();
+            let w = reduced.get_type().get_width().unwrap_or_else(|_| {
+                panic!("failed to read width of {}", reduced.gen_expr_string())
+            });
+            self.emit(format!("push {} {}(%sp)", reduced.gen_expr_string(), w));
+        });
+        let temp = Temp::new(self.id.tp.clone(), Rc::clone(&self.temp_count));
+        self.emit(format!(
+            "{} = call {}",
+            temp.to_string(),
+            self.id.to_string()
+        ));
+        temp
+    }
+}
+
+impl ExprNode for Call {
+    fn jumping(&self, t: u32, f: u32) {
+        self.emit_jumps(self.reduce().to_string(), t, f);
+    }
+    fn to_string(&self) -> String {
+        self.reduce().to_string()
     }
 }
 

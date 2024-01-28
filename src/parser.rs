@@ -1,6 +1,6 @@
 use super::inter::{
-    Access, And, Arith, Break, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel, Return,
-    Seq, Set, SetElem, StmtUnion, Unary, While,
+    Access, And, Arith, Break, Call, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel,
+    Return, Seq, Set, SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
 use std::cell::RefCell;
@@ -1063,12 +1063,24 @@ impl Parser {
                     let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
-                            let id = ExprUnion::Id(Rc::new(sym.clone()));
-                            if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
-                                let access = self.offset(sym.to_owned());
-                                return Some(ExprUnion::Access(Rc::new(access)));
+                            let id = ExprUnion::Id(Rc::new(sym.to_owned()));
+                            match self.lexer.tokens.front() {
+                                Some(Token::Lsb(_)) => {
+                                    let access = self.offset(sym.to_owned());
+                                    Some(ExprUnion::Access(Rc::new(access)))
+                                }
+                                Some(Token::Lrb(_)) => {
+                                    let func_id = sym.to_owned();
+                                    let args: Vec<ExprUnion> = self.args();
+                                    let call = ExprUnion::Call(Rc::new(Call::new(
+                                        func_id,
+                                        args,
+                                        Rc::clone(&self.temp_count),
+                                    )));
+                                    Some(call)
+                                }
+                                _ => Some(id),
                             }
-                            Some(id)
                         }
                         None => {
                             panic!("Error at line {}: {} undeclared", line, s);
@@ -1082,6 +1094,38 @@ impl Parser {
             },
             None => None,
         }
+    }
+
+    fn args(&mut self) -> Vec<ExprUnion> {
+        let mut args_vec: Vec<ExprUnion> = Vec::new();
+
+        let args_line = self.get_line();
+
+        if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
+        } else {
+            panic!("Error at line {}: missing (", args_line);
+        }
+
+        while let Some(Token::Id(_))
+        | Some(Token::True(_))
+        | Some(Token::False(_))
+        | Some(Token::Num(_))
+        | Some(Token::Lrb(_)) = self.lexer.tokens.front()
+        {
+            if let Some(expr) = self.boolean() {
+                args_vec.push(expr);
+            } else {
+                panic!("Error at line {}: missing expression", args_line);
+            }
+        }
+
+        if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
+        } else {
+            panic!("Error at line {}: missing )", args_line);
+        }
+
+        args_vec.reverse();
+        args_vec
     }
 
     fn offset(&mut self, a: Id) -> Access {
