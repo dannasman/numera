@@ -58,6 +58,7 @@ pub enum Token {
     Arr(Array),
     Def(String),
     Return(String),
+    Void(String),
 }
 
 impl Token {
@@ -98,6 +99,7 @@ impl Token {
             Token::Arr(a) => a.array_to_string(),
             Token::Def(s) => s,
             Token::Return(s) => s,
+            Token::Void(s) => s,
         }
     }
 
@@ -107,7 +109,7 @@ impl Token {
             Token::Float(_) => Ok(8),
             Token::Bool(_) => Ok(1),
             Token::Arr(a) => Ok(a.width),
-            _ => Err("type does not exist"),
+            _ => Err("type void does not have size"),
         }
     }
 }
@@ -138,6 +140,7 @@ impl Lexer {
                     String::from("return"),
                     Token::Return(String::from("return")),
                 ),
+                (String::from("void"), Token::Void(String::from("void"))),
             ]),
             current_line: 1,
             lines: VecDeque::new(),
@@ -420,12 +423,12 @@ mod tests {
 
     #[test]
     fn correct_function_definition_handling() {
-        let input = String::from("def int f(int a, int b)\n {\nreturn a + b;\n}");
+        let input = String::from("def void f(int a, int b)\n {\nreturn;\n}");
         let mut lexer = Lexer::new();
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(
-            r#"[Def("def"), Int("int"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")"), Lcb("{"), Return("return"), Id("a"), Add("+"), Id("b"), Scol(";"), Rcb("}")]"#,
+            r#"[Def("def"), Void("void"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")"), Lcb("{"), Return("return"), Scol(";"), Rcb("}")]"#,
             output
         )
     }

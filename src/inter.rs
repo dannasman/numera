@@ -149,6 +149,7 @@ pub enum StmtUnion {
     Seq(Rc<Seq>),
     Break(Rc<Break>),
     Function(Rc<Function>),
+    FunctionCall(Rc<FunctionCall>), //this is a wrapper struct implemented to handle void function calls
     Return(Rc<Return>),
 }
 
@@ -176,6 +177,7 @@ impl StmtUnion {
             StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(i),
             StmtUnion::Break(break_stmt) => break_stmt.emit_label(i),
             StmtUnion::Function(function_stmt) => function_stmt.emit_label(i),
+            StmtUnion::FunctionCall(call_stmt) => call_stmt.emit_label(i),
             StmtUnion::Return(return_stmt) => return_stmt.emit_label(i),
         }
     }
@@ -189,6 +191,7 @@ impl StmtUnion {
             StmtUnion::Seq(seq_stmt) => seq_stmt.gen(b, a),
             StmtUnion::Break(break_stmt) => break_stmt.gen(b, a),
             StmtUnion::Function(function_stmt) => function_stmt.gen(b, a),
+            StmtUnion::FunctionCall(call_stmt) => call_stmt.gen(b, a),
             StmtUnion::Return(return_stmt) => return_stmt.gen(b, a),
         }
     }
@@ -1140,6 +1143,34 @@ impl StmtNode for Function {
         self.emit_label(after);
 
         //self.emit(String::from("ret"));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionCall {
+    call: Call,
+}
+
+impl FunctionCall {
+    pub fn new(call: Call) -> Result<Self, &'static str> {
+        if let Token::Void(_) = call.id.tp {
+            Ok(FunctionCall { call })
+        } else {
+            Err("Function called without assignment must be of type void")
+        }
+    }
+}
+
+impl StmtNode for FunctionCall {
+    fn gen(&self, _b: u32, _a: u32) {
+        self.call.params.iter().for_each(|e| {
+            let reduced = e.reduce();
+            let w = reduced.get_type().get_width().unwrap_or_else(|_| {
+                panic!("failed to read width of {}", reduced.gen_expr_string())
+            });
+            self.emit(format!("push {} {}(%sp)", reduced.gen_expr_string(), w));
+        });
+        self.emit(format!("call {}", self.call.id.to_string()));
     }
 }
 

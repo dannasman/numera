@@ -1,6 +1,6 @@
 use super::inter::{
-    Access, And, Arith, Break, Call, Constant, Else, ExprUnion, Function, Id, If, Not, Or, Rel,
-    Return, Seq, Set, SetElem, StmtUnion, Unary, While,
+    Access, And, Arith, Break, Call, Constant, Else, ExprUnion, Function, FunctionCall, Id, If,
+    Not, Or, Rel, Return, Seq, Set, SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
 use std::cell::RefCell;
@@ -267,7 +267,8 @@ impl Parser {
                     let function_line = self.get_line();
                     if let Some(tp @ Token::Int(_))
                     | Some(tp @ Token::Float(_))
-                    | Some(tp @ Token::Bool(_)) = self.lexer.tokens.pop_front()
+                    | Some(tp @ Token::Bool(_))
+                    | Some(tp @ Token::Void(_)) = self.lexer.tokens.pop_front()
                     {
                         self.get_line();
                         if let Some(Token::Id(id_s)) = self.lexer.tokens.pop_front() {
@@ -280,10 +281,15 @@ impl Parser {
                             } else {
                                 let id =
                                     Id::new(tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
+
+                                // TODO: evaluate necessity of this
+                                /*
                                 match tp.get_width() {
                                     Ok(w) => self.used += w,
                                     Err(e) => panic!("Error at line {}: {}", function_line, e),
                                 }
+                                */
+
                                 self.symbol_table.insert(id_s.to_owned(), id.clone());
                                 self.get_line();
                                 if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
@@ -522,14 +528,45 @@ impl Parser {
                     Some(sym) => {
                         let id = sym.to_owned();
                         match self.lexer.tokens.front() {
-                            Some(token) => {
-                                if let Token::Asgn(_) = token {
-                                    self.lexer.tokens.pop_front();
-                                    self.get_line();
+                            Some(Token::Asgn(_)) => {
+                                self.lexer.tokens.pop_front();
+                                self.get_line();
+                                let expr = self.boolean();
+                                match expr {
+                                    Some(x) => {
+                                        let set_stmt = Set::new(id, x);
+                                        match set_stmt {
+                                            Ok(set) => {
+                                                t = self.lexer.tokens.pop_front();
+                                                self.get_line();
+                                                if let Some(Token::Scol(_)) = t {
+                                                } else {
+                                                    panic!(
+                                                        "Error at line {}: token did not match ;",
+                                                        line
+                                                    );
+                                                }
+                                                Some(StmtUnion::Set(Rc::new(set)))
+                                            }
+                                            Err(e) => {
+                                                panic!("Error at line {}: {}", line, e);
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        panic!("Error at line {}: expression missing", line);
+                                    }
+                                }
+                            }
+                            Some(Token::Lsb(_)) => {
+                                let access = self.offset(id);
+                                t = self.lexer.tokens.pop_front();
+                                self.get_line();
+                                if let Some(Token::Asgn(_)) = t {
                                     let expr = self.boolean();
                                     match expr {
                                         Some(x) => {
-                                            let set_stmt = Set::new(id, x);
+                                            let set_stmt = SetElem::new(access, x);
                                             match set_stmt {
                                                 Ok(set) => {
                                                     t = self.lexer.tokens.pop_front();
@@ -537,11 +574,11 @@ impl Parser {
                                                     if let Some(Token::Scol(_)) = t {
                                                     } else {
                                                         panic!(
-                                                            "Error at line {}: token did not match ;",
-                                                            line
-                                                        );
+                                                                "Error at line {}: token did not match ;",
+                                                                line
+                                                            );
                                                     }
-                                                    Some(StmtUnion::Set(Rc::new(set)))
+                                                    Some(StmtUnion::SetElem(Rc::new(set)))
                                                 }
                                                 Err(e) => {
                                                     panic!("Error at line {}: {}", line, e);
@@ -553,49 +590,21 @@ impl Parser {
                                         }
                                     }
                                 } else {
-                                    if let Token::Lsb(_) = token {
-                                    } else {
-                                        panic!("Error at line {}: invalid assign statement", line);
-                                    }
-                                    let access = self.offset(id);
-                                    t = self.lexer.tokens.pop_front();
-                                    self.get_line();
-                                    if let Some(Token::Asgn(_)) = t {
-                                        let expr = self.boolean();
-                                        match expr {
-                                            Some(x) => {
-                                                let set_stmt = SetElem::new(access, x);
-                                                match set_stmt {
-                                                    Ok(set) => {
-                                                        t = self.lexer.tokens.pop_front();
-                                                        self.get_line();
-                                                        if let Some(Token::Scol(_)) = t {
-                                                        } else {
-                                                            panic!(
-                                                                "Error at line {}: token did not match ;",
-                                                                line
-                                                            );
-                                                        }
-                                                        Some(StmtUnion::SetElem(Rc::new(set)))
-                                                    }
-                                                    Err(e) => {
-                                                        panic!("Error at line {}: {}", line, e);
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                panic!(
-                                                    "Error at line {}: expression missing",
-                                                    line
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        panic!("Error at line {}: token did not match =", line);
-                                    }
+                                    panic!("Error at line {}: token did not match =", line);
                                 }
                             }
-                            None => None,
+                            Some(Token::Lrb(_)) => {
+                                let func_id = sym.to_owned();
+                                let args: Vec<ExprUnion> = self.args();
+                                let call_expr =
+                                    Call::new(func_id, args, Rc::clone(&self.temp_count));
+                                let call_stmt = FunctionCall::new(call_expr);
+                                match call_stmt {
+                                    Ok(call) => Some(StmtUnion::FunctionCall(Rc::new(call))),
+                                    Err(e) => panic!("Error at line {}: {}", line, e),
+                                }
+                            }
+                            _ => panic!("Error at line {}: invalid assign statement", line),
                         }
                     }
                     None => {
