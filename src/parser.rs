@@ -16,7 +16,7 @@ pub struct Parser {
     lexer: Lexer,
     symbol_table: HashMap<String, Id>,
     activation_record_table: HashMap<String, ActivationRecord>,
-    activation_record_stack: Vec<ActivationRecord>,
+    //activation_record_stack: Vec<ActivationRecord>,
     temp_count: Rc<RefCell<u32>>,
     used: u32,
 }
@@ -30,7 +30,7 @@ impl Parser {
             lexer,
             symbol_table: HashMap::new(),
             activation_record_table: HashMap::new(),
-            activation_record_stack: Vec::new(),
+            //activation_record_stack: Vec::new(),
             temp_count: Rc::new(RefCell::new(0)),
             used: 0,
         }
@@ -364,7 +364,6 @@ impl Parser {
                 Token::Return(_) => {
                     self.lexer.tokens.pop_front();
                     let return_line = self.get_line();
-                    self.activation_record_stack.pop();
 
                     if let Some(Token::Scol(_)) = self.lexer.tokens.front() {
                         let return_stmt = StmtUnion::Return(Rc::new(Return::new(None)));
@@ -615,8 +614,6 @@ impl Parser {
                                     {
                                         panic!("Error at line {}: argument types did not match function parameter types", line);
                                     }
-
-                                    self.activation_record_stack.push(activation_record);
 
                                     let call_expr =
                                         Call::new(func_id, args, Rc::clone(&self.temp_count));
@@ -1107,7 +1104,9 @@ impl Parser {
                                 Some(Token::Lrb(_)) => {
                                     if let Some(ar) = self.activation_record_table.get_mut(&s) {
                                         let activation_record = ar.to_owned();
+
                                         let func_id = sym.to_owned();
+
                                         let args: Vec<ExprUnion> = self.args();
 
                                         if !activation_record
@@ -1119,13 +1118,12 @@ impl Parser {
                                             panic!("Error at line {}: argument types did not match function parameter types", line);
                                         }
 
-                                        self.activation_record_stack.push(activation_record);
-
                                         let call = ExprUnion::Call(Rc::new(Call::new(
                                             func_id,
                                             args,
                                             Rc::clone(&self.temp_count),
                                         )));
+
                                         Some(call)
                                     } else {
                                         panic!("Error at line {}: function not declared", line);
