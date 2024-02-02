@@ -3,6 +3,8 @@ use super::inter::{
     Not, Or, Rel, Return, Seq, Set, SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
+use super::runtime::ActivationRecord;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -13,6 +15,8 @@ pub struct Parser {
     label: Rc<RefCell<u32>>,
     lexer: Lexer,
     symbol_table: HashMap<String, Id>,
+    activation_record_table: HashMap<String, ActivationRecord>,
+    activation_record_stack: Vec<ActivationRecord>,
     temp_count: Rc<RefCell<u32>>,
     used: u32,
 }
@@ -25,6 +29,8 @@ impl Parser {
             label: Rc::new(RefCell::new(0)),
             lexer,
             symbol_table: HashMap::new(),
+            activation_record_table: HashMap::new(),
+            activation_record_stack: Vec::new(),
             temp_count: Rc::new(RefCell::new(0)),
             used: 0,
         }
@@ -325,6 +331,11 @@ impl Parser {
                                     );
                                 }
 
+                                self.activation_record_table.insert(
+                                    id_s.to_owned(),
+                                    ActivationRecord::new(tp, params.to_owned()),
+                                );
+
                                 let stmt = self.stmts();
 
                                 self.get_line();
@@ -338,12 +349,8 @@ impl Parser {
 
                                 self.symbol_table = saved_symbol_table;
 
-                                let function_stmt = StmtUnion::Function(Rc::new(Function::new(
-                                    Rc::clone(&self.label),
-                                    id_s,
-                                    params,
-                                    stmt,
-                                )));
+                                let function_stmt =
+                                    StmtUnion::Function(Rc::new(Function::new(id_s, params, stmt)));
                                 self.declarations.push(function_stmt);
                                 None
                             }
@@ -357,6 +364,7 @@ impl Parser {
                 Token::Return(_) => {
                     self.lexer.tokens.pop_front();
                     let return_line = self.get_line();
+                    self.activation_record_stack.pop();
 
                     if let Some(Token::Scol(_)) = self.lexer.tokens.front() {
                         let return_stmt = StmtUnion::Return(Rc::new(Return::new(None)));
@@ -594,14 +602,32 @@ impl Parser {
                                 }
                             }
                             Some(Token::Lrb(_)) => {
-                                let func_id = sym.to_owned();
-                                let args: Vec<ExprUnion> = self.args();
-                                let call_expr =
-                                    Call::new(func_id, args, Rc::clone(&self.temp_count));
-                                let call_stmt = FunctionCall::new(call_expr);
-                                match call_stmt {
-                                    Ok(call) => Some(StmtUnion::FunctionCall(Rc::new(call))),
-                                    Err(e) => panic!("Error at line {}: {}", line, e),
+                                if let Some(ar) = self.activation_record_table.get_mut(&id_s) {
+                                    let activation_record = ar.to_owned();
+                                    let func_id = sym.to_owned();
+                                    let args: Vec<ExprUnion> = self.args();
+
+                                    if !activation_record
+                                        .params
+                                        .iter()
+                                        .zip(args.iter())
+                                        .all(|(p, a)| p.tp == a.get_type())
+                                    {
+                                        panic!("Error at line {}: argument types did not match function parameter types", line);
+                                    }
+
+                                    self.activation_record_stack.push(activation_record);
+
+                                    let call_expr =
+                                        Call::new(func_id, args, Rc::clone(&self.temp_count));
+
+                                    let call_stmt = FunctionCall::new(call_expr);
+                                    match call_stmt {
+                                        Ok(call) => Some(StmtUnion::FunctionCall(Rc::new(call))),
+                                        Err(e) => panic!("Error at line {}: {}", line, e),
+                                    }
+                                } else {
+                                    panic!("Error at line {}: function not declared", line);
                                 }
                             }
                             _ => panic!("Error at line {}: invalid assign statement", line),
@@ -1079,14 +1105,31 @@ impl Parser {
                                     Some(ExprUnion::Access(Rc::new(access)))
                                 }
                                 Some(Token::Lrb(_)) => {
-                                    let func_id = sym.to_owned();
-                                    let args: Vec<ExprUnion> = self.args();
-                                    let call = ExprUnion::Call(Rc::new(Call::new(
-                                        func_id,
-                                        args,
-                                        Rc::clone(&self.temp_count),
-                                    )));
-                                    Some(call)
+                                    if let Some(ar) = self.activation_record_table.get_mut(&s) {
+                                        let activation_record = ar.to_owned();
+                                        let func_id = sym.to_owned();
+                                        let args: Vec<ExprUnion> = self.args();
+
+                                        if !activation_record
+                                            .params
+                                            .iter()
+                                            .zip(args.iter())
+                                            .all(|(p, a)| p.tp == a.get_type())
+                                        {
+                                            panic!("Error at line {}: argument types did not match function parameter types", line);
+                                        }
+
+                                        self.activation_record_stack.push(activation_record);
+
+                                        let call = ExprUnion::Call(Rc::new(Call::new(
+                                            func_id,
+                                            args,
+                                            Rc::clone(&self.temp_count),
+                                        )));
+                                        Some(call)
+                                    } else {
+                                        panic!("Error at line {}: function not declared", line);
+                                    }
                                 }
                                 _ => Some(id),
                             }
@@ -1119,6 +1162,7 @@ impl Parser {
         | Some(Token::True(_))
         | Some(Token::False(_))
         | Some(Token::Num(_))
+        | Some(Token::Real(_))
         | Some(Token::Lrb(_)) = self.lexer.tokens.front()
         {
             if let Some(expr) = self.boolean() {

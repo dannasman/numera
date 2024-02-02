@@ -106,7 +106,7 @@ impl ExprUnion {
         }
     }
 
-    fn get_type(&self) -> Token {
+    pub fn get_type(&self) -> Token {
         match self {
             ExprUnion::Id(id) => id.tp.clone(),
             ExprUnion::Arith(arith) => arith.tp.clone(),
@@ -1095,30 +1095,19 @@ impl StmtNode for Break {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    label: Rc<RefCell<u32>>,
     name: String,
     params: Vec<Id>,
     stmt: Option<StmtUnion>,
 }
 
 impl Function {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        name: String,
-        params: Vec<Id>,
-        stmt: Option<StmtUnion>,
-    ) -> Self {
-        Self {
-            label,
-            name,
-            params,
-            stmt,
-        }
+    pub fn new(name: String, params: Vec<Id>, stmt: Option<StmtUnion>) -> Self {
+        Self { name, params, stmt }
     }
 }
 
 impl StmtNode for Function {
-    fn gen(&self, _b: u32, _a: u32) {
+    fn gen(&self, b: u32, a: u32) {
         println!("{}:", self.name);
 
         self.params.iter().for_each(|id| {
@@ -1129,20 +1118,9 @@ impl StmtNode for Function {
             self.emit(format!("pop {} {}(%sp)", id.to_string(), w));
         });
 
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let begin = *l;
-        *l += 1;
-        let after = *l;
-        drop(l);
-
-        self.emit_label(begin);
         if let Some(s) = &self.stmt {
-            s.gen(begin, after)
+            s.gen(b, a)
         }
-        self.emit_label(after);
-
-        //self.emit(String::from("ret"));
     }
 }
 

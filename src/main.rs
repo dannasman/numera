@@ -1,6 +1,8 @@
 mod inter;
 mod lexer;
 mod parser;
+mod runtime;
+
 use std::env;
 use std::error::Error;
 use std::fs;
