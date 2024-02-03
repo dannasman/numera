@@ -1519,23 +1519,11 @@ mod tests {
             Some(StmtUnion::Set(Rc::new(set))),
         )?;
 
-        let function_stmt = Function::new(
-            Rc::clone(&label),
+        let _function_stmt = Function::new(
             String::from("f"),
             vec![id],
             Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))),
         );
-
-        let mut l = label.borrow_mut();
-        *l += 1;
-        let begin = *l;
-        *l += 1;
-        let after = *l;
-        drop(l);
-
-        function_stmt.emit_label(begin);
-        function_stmt.gen(begin, after);
-        function_stmt.emit_label(after);
 
         Ok(())
     }
