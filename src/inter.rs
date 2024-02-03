@@ -1527,4 +1527,31 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_function_call() -> Result<(), &'static str> {
+        let temp_count = Rc::new(RefCell::new(0));
+        // create calls both with and without FunctionCall wrapper
+        let id_void = Id::new(
+            Token::Void(String::from("void")),
+            Token::Id(String::from("f")),
+            0,
+        );
+        let id_int = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("f")),
+            0,
+        );
+
+        let call_void = Call::new(id_void, vec![], Rc::clone(&temp_count));
+        let call_int = Call::new(id_int, vec![], Rc::clone(&temp_count));
+
+        let function_call_void = FunctionCall::new(call_void);
+        let function_call_int = FunctionCall::new(call_int);
+
+        assert!(function_call_void.is_ok());
+        assert!(function_call_int.is_err());
+
+        Ok(())
+    }
 }
