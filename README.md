@@ -65,12 +65,16 @@ stmts       ->      stmts stmt | ε
 stmt        ->      type id = bool;
             |       type id [ num ];
             |       loc = bool;
-            |       if (bool) stmt
-            |       if (bool) stmt else stmt
-            |       while (bool) stmt
+            |       if ( bool ) stmt
+            |       if ( bool ) stmt else stmt
+            |       while ( bool ) stmt
+            |       def type id ( params ) stmt
+            |       return expr;
             |       break;
             |       block
-loc         ->      loc [ bool ] | id
+params      |       ε | type id, params
+args        |       ε | id, args
+loc         ->      loc [ bool ] | id | id ( args )
 bool        ->      bool || join | join
 join        ->      join && equality | equality
 equality    ->      equality == rel | equality != rel | rel
