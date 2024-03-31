@@ -2,6 +2,7 @@ mod inter;
 mod lexer;
 mod parser;
 mod runtime;
+mod tac;
 
 use std::env;
 use std::error::Error;

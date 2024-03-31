@@ -1,4 +1,5 @@
 use super::lexer::Token;
+use super::tac::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
