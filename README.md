@@ -83,5 +83,5 @@ rel         ->      expr < expr | expr <= expr | expr >= expr |
 expr        ->      expr + term | expr - term | term
 term        ->      term * unary | term / unary | unary
 unary       ->      ! unary | - unary | factor
-factor      ->      ( bool ) | loc | num | true | false
+factor      ->      ( bool ) | loc | num | real | true | false
 ```

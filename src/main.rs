@@ -25,9 +25,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let now = Instant::now();
 
-    parser.program(&input);
+    let tac_ir = tac::TACState::new();
+
+    parser.program(&input, tac_ir.clone());
 
     let elapsed = now.elapsed();
+
+    tac_ir.print();
 
     println!("Code compiled in {:?}", elapsed);
     Ok(())

@@ -4,6 +4,7 @@ use super::inter::{
 };
 use super::lexer::{Array, Lexer, Token};
 use super::runtime::ActivationRecord;
+use super::tac::*;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -44,7 +45,7 @@ impl Parser {
         }
     }
 
-    pub fn program(&mut self, input: &str) {
+    pub fn program(&mut self, input: &str, tac_ir: TACState) {
         self.lexer.lex(input);
 
         let stmt = self.block();
@@ -57,12 +58,12 @@ impl Parser {
             drop(l);
 
             self.declarations.iter().for_each(|s| {
-                s.gen(begin, after);
+                s.gen_tac(tac_ir.clone(), begin, after);
             });
 
-            s.emit_label(begin);
-            s.gen(begin, after);
-            s.emit_label(after);
+            s.emit_label(tac_ir.clone(), begin);
+            s.gen_tac(tac_ir.clone(), begin, after);
+            s.emit_label(tac_ir.clone(), after);
         }
     }
 
