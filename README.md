@@ -9,12 +9,22 @@ Compiler project inspired by the dragon book :dragon:. Contains only the compile
 Example code snippet `foo.num` in root directory:
 ```
 {
-    int x[10];
+    def int fib(int n) {
+        if (n == 0) {
+            return 1;
+        }
+
+        if (n == 1) {
+            return 1;
+        }
+
+        return fib(n - 1) + fib(n - 2);
+    }
+
+    int n[10];
     int i = 0;
-    while (true) {
-        if (i == 10) break;
-        x[i] = i;
-        i = i + 1;
+    while (i < 10) {
+        n[i] = fib(i);
     }
 }
 ```
@@ -25,31 +35,62 @@ cargo run --release foo.num
 Output:
 ```
 {
-    int x[10];
+    def int fib(int n) {
+        if (n == 0) {
+            return 1;
+        }
+
+        if (n == 1) {
+            return 1;
+        }
+
+        return fib(n - 1) + fib(n - 2);
+    }
+
+    int n[10];
     int i = 0;
-    while (true) {
-        if (i == 10) break;
-        x[i] = i;
-        i = i + 1;
+    while (i < 10) {
+        n[i] = fib(i);
     }
 }
-----------compiling----------
-L1:
-	i = 0
-L3:
-L4:
-	iffalse i == 10 goto L5
-L6:
-	goto L2
-L5:
-	t1 = i * 4
-	x [ t1 ] = i
-L7:
-	i = i + 1
-	goto L3
-L2:
-Code compiled in 59.802µs
 
+----------compiling----------
+fib:
+POP n
+EQ t1 n 0
+GOTO L3 iffalse t1
+L4:
+PUSH 1
+RET
+L3:
+EQ t2 n 1
+GOTO L5 iffalse t2
+L6:
+PUSH 1
+RET
+L5:
+SUB t4 n 1
+PUSH t4
+CALL t5 fib
+SUB t6 n 2
+PUSH t6
+CALL t7 fib
+ADD t3 t5 t7
+PUSH t3
+RET
+L1:
+i 0
+L7:
+LT t8 i 10
+GOTO L2 iffalse t8
+L8:
+MUL t9 i 4
+PUSH i
+CALL t10 fib
+n [ t9 ] t10
+GOTO L7
+L2:
+Code compiled in 69.194µs
 ```
 ## Run tests
 Run tests by running the following command:
