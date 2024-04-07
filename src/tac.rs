@@ -37,24 +37,24 @@ pub enum TACOperator {
 impl TACOperator {
     pub fn to_string(&self) -> String {
         match self {
-            TACOperator::ADD => String::from("+"),
-            TACOperator::SUB => String::from("-"),
-            TACOperator::MUL => String::from("+"),
-            TACOperator::DIV => String::from("/"),
-            TACOperator::EQ => String::from("=="),
-            TACOperator::NEQ => String::from("!="),
-            TACOperator::GT => String::from(">"),
-            TACOperator::GE => String::from(">="),
-            TACOperator::LT => String::from("<"),
-            TACOperator::LE => String::from("<="),
+            TACOperator::ADD => String::from("ADD"),
+            TACOperator::SUB => String::from("SUB"),
+            TACOperator::MUL => String::from("MUL"),
+            TACOperator::DIV => String::from("DIV"),
+            TACOperator::EQ => String::from("EQ"),
+            TACOperator::NEQ => String::from("NEQ"),
+            TACOperator::GT => String::from("GT"),
+            TACOperator::GE => String::from("GE"),
+            TACOperator::LT => String::from("LT"),
+            TACOperator::LE => String::from("LE"),
             TACOperator::ASGN => String::from("="),
-            TACOperator::AND => String::from("&&"),
-            TACOperator::OR => String::from("||"),
-            TACOperator::PUSH => String::from("push"),
-            TACOperator::POP => String::from("pop"),
-            TACOperator::GOTO => String::from("goto"),
-            TACOperator::CALL => String::from("call"),
-            TACOperator::RET => String::from("ret"),
+            TACOperator::AND => String::from("AND"),
+            TACOperator::OR => String::from("OR"),
+            TACOperator::PUSH => String::from("PUSH"),
+            TACOperator::POP => String::from("POP"),
+            TACOperator::GOTO => String::from("GOTO"),
+            TACOperator::CALL => String::from("CALL"),
+            TACOperator::RET => String::from("RET"),
             TACOperator::NONE => String::from(""),
         }
     }
@@ -91,7 +91,9 @@ impl TACOperand {
             TACOperand::CONST_FLOAT(s) => s.to_owned(),
             TACOperand::CONST_BOOL(s) => s.to_owned(),
             TACOperand::LABEL(s) => s.to_owned(),
-            TACOperand::ACCESS(operand1, operand2) => format!("{} [ {} ]", operand1.to_string(), operand2.to_string()),
+            TACOperand::ACCESS(operand1, operand2) => {
+                format!("{} [ {} ]", operand1.to_string(), operand2.to_string())
+            }
             TACOperand::IF => String::from("if"),
             TACOperand::IFFALSE => String::from("iffalse"),
             TACOperand::NULL => String::from(""),
@@ -118,11 +120,6 @@ impl TACInstruction {
     }
 }
 
-pub enum TACExpr {
-    SINGLE(TACOperand),
-    DOUBLE(TACOperator, TACOperand, TACOperand),
-}
-
 // TODO: implement methods for TACState (clone, new etc.)
 pub struct TACState(Rc<RefCell<Vec<TACInstruction>>>);
 
@@ -145,7 +142,14 @@ impl TACState {
     pub fn print(&self) {
         let tac_ir = self.0.borrow().to_vec();
         tac_ir.into_iter().for_each(|instruction| {
-            println!("{} {} {} {}", instruction.op.to_string(), instruction.arg1.to_string(), instruction.arg2.to_string(), instruction.result.to_string());
+            let s = format!(
+                "{} {} {} {}",
+                instruction.op.to_string(),
+                instruction.result.to_string(),
+                instruction.arg1.to_string(),
+                instruction.arg2.to_string()
+            );
+            println!("{}", s.split_whitespace().collect::<Vec<_>>().join(" "));
         });
     }
 }

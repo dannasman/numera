@@ -11,21 +11,46 @@ use std::rc::Rc;
 
 pub trait ExprNode {
     fn emit_label(&self, tac_ir: TACState, i: u32) {
-        let instruction = TACInstruction::new(TACOperator::NONE, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}:", i)));
+        let instruction = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}:", i)),
+        );
         tac_ir.push(instruction);
     }
 
     fn emit_jumps(&self, tac_ir: TACState, test: TACOperand, t: u32, f: u32) {
         if t != 0 && f != 0 {
-            let instruction1 = TACInstruction::new(TACOperator::GOTO, TACOperand::IF, test, TACOperand::LABEL(format!("L{}", t)));
+            let instruction1 = TACInstruction::new(
+                TACOperator::GOTO,
+                TACOperand::IF,
+                test,
+                TACOperand::LABEL(format!("L{}", t)),
+            );
             tac_ir.push(instruction1);
-            let instruction2 = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("{}", f)));
+            let instruction2 = TACInstruction::new(
+                TACOperator::GOTO,
+                TACOperand::NULL,
+                TACOperand::NULL,
+                TACOperand::LABEL(format!("{}", f)),
+            );
             tac_ir.push(instruction2);
         } else if t != 0 {
-            let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::IF, test, TACOperand::LABEL(format!("L{}", t)));
+            let instruction = TACInstruction::new(
+                TACOperator::GOTO,
+                TACOperand::IF,
+                test,
+                TACOperand::LABEL(format!("L{}", t)),
+            );
             tac_ir.push(instruction);
         } else if f != 0 {
-            let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::IFFALSE, test, TACOperand::LABEL(format!("L{}", f)));
+            let instruction = TACInstruction::new(
+                TACOperator::GOTO,
+                TACOperand::IFFALSE,
+                test,
+                TACOperand::LABEL(format!("L{}", f)),
+            );
             tac_ir.push(instruction);
         }
     }
@@ -41,7 +66,12 @@ pub trait ExprNode {
 
 pub trait StmtNode {
     fn emit_label(&self, tac_ir: TACState, i: u32) {
-        let instruction = TACInstruction::new(TACOperator::NONE, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}:", i)));
+        let instruction = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}:", i)),
+        );
         tac_ir.push(instruction);
     }
 
@@ -207,20 +237,56 @@ impl Id {
 
 impl ExprNode for Id {
     fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        match self.tp {
-            Token::Int(_) => (TACOperator::NONE, TACOperand::VAR_INT(self.token.to_owned().value_to_string()), TACOperand::NULL),
-            Token::Float(_) => (TACOperator::NONE, TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()), TACOperand::NULL),
-            Token::Bool(_) => (TACOperator::NONE, TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()), TACOperand::NULL),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL)
+        match &self.tp {
+            Token::Int(_) => (
+                TACOperator::NONE,
+                TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            Token::Float(_) => (
+                TACOperator::NONE,
+                TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            Token::Bool(_) => (
+                TACOperator::NONE,
+                TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            Token::Arr(arr) => match *arr.of {
+                Token::Int(_) => (
+                    TACOperator::NONE,
+                    TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
+                    TACOperand::NULL,
+                ),
+                Token::Float(_) => (
+                    TACOperator::NONE,
+                    TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
+                    TACOperand::NULL,
+                ),
+                Token::Bool(_) => (
+                    TACOperator::NONE,
+                    TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
+                    TACOperand::NULL,
+                ),
+                _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
+            },
+            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
         }
     }
 
     fn reduce_tac(&self, _tac_ir: TACState) -> TACOperand {
-        match self.tp {
+        match &self.tp {
             Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
             Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
             Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-            _ => TACOperand::NULL
+            Token::Arr(arr) => match *arr.of {
+                Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
+                Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
+                Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
+                _ => TACOperand::NULL,
+            },
+            _ => TACOperand::NULL,
         }
     }
 }
@@ -244,18 +310,28 @@ impl Call {
 
 impl ExprNode for Call {
     fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        (TACOperator::NONE, self.reduce_tac(tac_ir.clone()), TACOperand::NULL)
+        (
+            TACOperator::NONE,
+            self.reduce_tac(tac_ir.clone()),
+            TACOperand::NULL,
+        )
     }
 
     fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        self.params.iter().for_each(|e|  {
+        self.params.iter().for_each(|e| {
             let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction = TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
+            let instruction =
+                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
             tac_ir.push(instruction);
         });
         let temp = Temp::new(self.id.tp.clone(), Rc::clone(&self.temp_count));
         let result = temp.reduce_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(TACOperator::CALL, self.id.reduce_tac(tac_ir.clone()), TACOperand::NULL, result.to_owned());
+        let instruction = TACInstruction::new(
+            TACOperator::CALL,
+            self.id.reduce_tac(tac_ir.clone()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction);
         result
     }
@@ -327,7 +403,7 @@ impl ExprNode for Arith {
             Token::Sub(_) => (TACOperator::SUB, e1, e2),
             Token::Mul(_) => (TACOperator::MUL, e1, e2),
             Token::Div(_) => (TACOperator::DIV, e1, e2),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL)
+            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
         }
     }
 
@@ -360,10 +436,22 @@ impl Temp {
 impl ExprNode for Temp {
     fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
         match self.tp {
-            Token::Int(_) => (TACOperator::NONE, TACOperand::TEMP_INT(format!("t{}", self.number)), TACOperand::NULL),
-            Token::Float(_) => (TACOperator::NONE, TACOperand::TEMP_FLOAT(format!("t{}", self.number)), TACOperand::NULL),
-            Token::Bool(_) => (TACOperator::NONE, TACOperand::TEMP_BOOL(format!("t{}", self.number)), TACOperand::NULL),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL)
+            Token::Int(_) => (
+                TACOperator::NONE,
+                TACOperand::TEMP_INT(format!("t{}", self.number)),
+                TACOperand::NULL,
+            ),
+            Token::Float(_) => (
+                TACOperator::NONE,
+                TACOperand::TEMP_FLOAT(format!("t{}", self.number)),
+                TACOperand::NULL,
+            ),
+            Token::Bool(_) => (
+                TACOperator::NONE,
+                TACOperand::TEMP_BOOL(format!("t{}", self.number)),
+                TACOperand::NULL,
+            ),
+            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
         }
     }
 
@@ -372,7 +460,7 @@ impl ExprNode for Temp {
             Token::Int(_) => TACOperand::TEMP_INT(format!("t{}", self.number)),
             Token::Float(_) => TACOperand::TEMP_FLOAT(format!("t{}", self.number)),
             Token::Bool(_) => TACOperand::TEMP_BOOL(format!("t{}", self.number)),
-            _ => TACOperand::NULL
+            _ => TACOperand::NULL,
         }
     }
 }
@@ -401,7 +489,7 @@ impl ExprNode for Unary {
         let arg1 = self.expr.reduce_tac(tac_ir.clone());
         let op = match self.op {
             Token::Sub(_) => TACOperator::SUB,
-            _ => TACOperator::NONE
+            _ => TACOperator::NONE,
         };
         (op, arg1, TACOperand::NULL)
     }
@@ -433,13 +521,23 @@ impl ExprNode for Constant {
         match self.constant {
             Token::True(_) => {
                 if t != 0 {
-                    let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("{}", t)));
+                    let instruction = TACInstruction::new(
+                        TACOperator::GOTO,
+                        TACOperand::NULL,
+                        TACOperand::NULL,
+                        TACOperand::LABEL(format!("{}", t)),
+                    );
                     tac_ir.push(instruction);
                 }
             }
             Token::False(_) => {
                 if f != 0 {
-                    let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("{}", f)));
+                    let instruction = TACInstruction::new(
+                        TACOperator::GOTO,
+                        TACOperand::NULL,
+                        TACOperand::NULL,
+                        TACOperand::LABEL(format!("{}", f)),
+                    );
                     tac_ir.push(instruction);
                 }
             }
@@ -449,10 +547,22 @@ impl ExprNode for Constant {
 
     fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
         match self.tp {
-            Token::Int(_) => (TACOperator::NONE, TACOperand::CONST_INT(self.constant.to_owned().value_to_string()), TACOperand::NULL),
-            Token::Float(_) => (TACOperator::NONE, TACOperand::CONST_FLOAT(self.constant.to_owned().value_to_string()), TACOperand::NULL),
-            Token::Bool(_) => (TACOperator::NONE, TACOperand::CONST_BOOL(self.constant.to_owned().value_to_string()), TACOperand::NULL),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL)
+            Token::Int(_) => (
+                TACOperator::NONE,
+                TACOperand::CONST_INT(self.constant.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            Token::Float(_) => (
+                TACOperator::NONE,
+                TACOperand::CONST_FLOAT(self.constant.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            Token::Bool(_) => (
+                TACOperator::NONE,
+                TACOperand::CONST_BOOL(self.constant.to_owned().value_to_string()),
+                TACOperand::NULL,
+            ),
+            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
         }
     }
 
@@ -461,7 +571,7 @@ impl ExprNode for Constant {
             Token::Int(_) => TACOperand::CONST_INT(self.constant.to_owned().value_to_string()),
             Token::Float(_) => TACOperand::CONST_FLOAT(self.constant.to_owned().value_to_string()),
             Token::Bool(_) => TACOperand::CONST_BOOL(self.constant.to_owned().value_to_string()),
-            _ => TACOperand::NULL
+            _ => TACOperand::NULL,
         }
     }
 }
@@ -533,22 +643,37 @@ impl ExprNode for Or {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         let result = temp.reduce_tac(tac_ir.clone());
-        
+
         self.jumping(tac_ir.clone(), 0, f);
-        
-        let instruction1 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("true".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction1 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("true".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction1);
-        
-        let instruction2 = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", a)));
+
+        let instruction2 = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", a)),
+        );
         tac_ir.push(instruction2);
-        
+
         self.emit_label(tac_ir.clone(), f);
-        
-        let instruction3 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("false".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction3 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("false".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction3);
-        
+
         self.emit_label(tac_ir.clone(), a);
-        
+
         result
     }
 }
@@ -620,22 +745,37 @@ impl ExprNode for And {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         let result = temp.reduce_tac(tac_ir.clone());
-        
+
         self.jumping(tac_ir.clone(), 0, f);
-        
-        let instruction1 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("true".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction1 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("true".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction1);
-        
-        let instruction2 = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", a)));
+
+        let instruction2 = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", a)),
+        );
         tac_ir.push(instruction2);
-        
+
         self.emit_label(tac_ir.clone(), f);
-        
-        let instruction3 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("false".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction3 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("false".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction3);
-        
+
         self.emit_label(tac_ir.clone(), a);
-        
+
         result
     }
 }
@@ -689,22 +829,37 @@ impl ExprNode for Not {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         let result = temp.reduce_tac(tac_ir.clone());
-        
+
         self.jumping(tac_ir.clone(), 0, f);
-        
-        let instruction1 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("true".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction1 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("true".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction1);
-        
-        let instruction2 = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", a)));
+
+        let instruction2 = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", a)),
+        );
         tac_ir.push(instruction2);
-        
+
         self.emit_label(tac_ir.clone(), f);
-        
-        let instruction3 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("false".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction3 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("false".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction3);
-        
+
         self.emit_label(tac_ir.clone(), a);
-        
+
         result
     }
 }
@@ -751,7 +906,7 @@ impl ExprNode for Rel {
             Token::Le(_) => TACOperator::LE,
             Token::Gt(_) => TACOperator::GT,
             Token::Ge(_) => TACOperator::GE,
-            _ => TACOperator::NONE
+            _ => TACOperator::NONE,
         };
         let arg1 = self.expr1.reduce_tac(tac_ir.clone());
         let arg2 = self.expr2.reduce_tac(tac_ir.clone());
@@ -773,7 +928,7 @@ impl ExprNode for Rel {
             Token::Le(_) => TACOperator::LE,
             Token::Gt(_) => TACOperator::GT,
             Token::Ge(_) => TACOperator::GE,
-            _ => TACOperator::NONE
+            _ => TACOperator::NONE,
         };
         let arg1 = self.expr1.reduce_tac(tac_ir.clone());
         let arg2 = self.expr2.reduce_tac(tac_ir.clone());
@@ -790,22 +945,37 @@ impl ExprNode for Rel {
 
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         let result = temp.reduce_tac(tac_ir.clone());
-        
+
         self.jumping(tac_ir.clone(), 0, f);
-        
-        let instruction1 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("true".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction1 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("true".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction1);
-        
-        let instruction2 = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", a)));
+
+        let instruction2 = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", a)),
+        );
         tac_ir.push(instruction2);
-        
+
         self.emit_label(tac_ir.clone(), f);
-        
-        let instruction3 = TACInstruction::new(TACOperator::NONE, TACOperand::CONST_BOOL("false".to_string()), TACOperand::NULL, result.to_owned());
+
+        let instruction3 = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::CONST_BOOL("false".to_string()),
+            TACOperand::NULL,
+            result.to_owned(),
+        );
         tac_ir.push(instruction3);
-        
+
         self.emit_label(tac_ir.clone(), a);
-        
+
         result
     }
 }
@@ -839,7 +1009,7 @@ impl ExprNode for Access {
         (TACOperator::NONE, arg1, TACOperand::NULL)
     }
 
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand  {
+    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
         let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
         let (op, arg1, arg2) = self.gen_tac(tac_ir.clone());
         let result = temp.reduce_tac(tac_ir.clone());
@@ -922,7 +1092,12 @@ impl StmtNode for Else {
         self.expr.jumping(tac_ir.clone(), 0, new_label2);
         self.emit_label(tac_ir.clone(), new_label1);
         self.stmt1.gen_tac(tac_ir.clone(), new_label1, a);
-        let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", a)));
+        let instruction = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", a)),
+        );
         tac_ir.push(instruction);
 
         self.emit_label(tac_ir.clone(), new_label2);
@@ -983,7 +1158,12 @@ impl StmtNode for While {
                 drop(l);
                 self.emit_label(tac_ir.clone(), new_label);
                 s.gen_tac(tac_ir.clone(), new_label, b);
-                let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", b)));
+                let instruction = TACInstruction::new(
+                    TACOperator::GOTO,
+                    TACOperand::NULL,
+                    TACOperand::NULL,
+                    TACOperand::LABEL(format!("L{}", b)),
+                );
                 tac_ir.push(instruction);
             }
         }
@@ -1096,7 +1276,7 @@ impl StmtNode for Seq {
                     s2.gen_tac(tac_ir.clone(), b, a);
                 }
                 None => (),
-            }
+            },
         }
     }
 }
@@ -1116,9 +1296,14 @@ impl Break {
 }
 
 impl StmtNode for Break {
-    fn gen_tac(&self, tac_ir: TACState,  _b: u32, _a: u32) {
+    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
         let after = self.stmt.after();
-        let instruction = TACInstruction::new(TACOperator::GOTO, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("L{}", after)));
+        let instruction = TACInstruction::new(
+            TACOperator::GOTO,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("L{}", after)),
+        );
         tac_ir.push(instruction);
     }
 }
@@ -1138,12 +1323,22 @@ impl Function {
 
 impl StmtNode for Function {
     fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
-        let instruction = TACInstruction::new(TACOperator::NONE, TACOperand::NULL, TACOperand::NULL, TACOperand::LABEL(format!("{}:", self.name)));
+        let instruction = TACInstruction::new(
+            TACOperator::NONE,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::LABEL(format!("{}:", self.name)),
+        );
         tac_ir.push(instruction);
 
         self.params.iter().for_each(|id| {
             let result = id.reduce_tac(tac_ir.clone());
-            let instruction = TACInstruction::new(TACOperator::POP, TACOperand::NULL, TACOperand::NULL, result.to_owned());
+            let instruction = TACInstruction::new(
+                TACOperator::POP,
+                TACOperand::NULL,
+                TACOperand::NULL,
+                result.to_owned(),
+            );
             tac_ir.push(instruction);
         });
 
@@ -1172,12 +1367,18 @@ impl StmtNode for FunctionCall {
     fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
         self.call.params.iter().for_each(|e| {
             let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction = TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
+            let instruction =
+                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
             tac_ir.push(instruction);
         });
 
         let result = self.call.id.reduce_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(TACOperator::CALL, result, TACOperand::NULL, TACOperand::NULL);
+        let instruction = TACInstruction::new(
+            TACOperator::CALL,
+            result,
+            TACOperand::NULL,
+            TACOperand::NULL,
+        );
         tac_ir.push(instruction);
     }
 }
@@ -1197,11 +1398,17 @@ impl StmtNode for Return {
     fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
         if let Some(e) = &self.expr {
             let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction = TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
+            let instruction =
+                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
             tac_ir.push(instruction);
         }
 
-        let instruction = TACInstruction::new(TACOperator::RET, TACOperand::NULL, TACOperand::NULL, TACOperand::NULL);
+        let instruction = TACInstruction::new(
+            TACOperator::RET,
+            TACOperand::NULL,
+            TACOperand::NULL,
+            TACOperand::NULL,
+        );
         tac_ir.push(instruction);
     }
 }
