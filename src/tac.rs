@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TACOperator {
     ADD,
     SUB,
@@ -60,7 +60,7 @@ impl TACOperator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TACOperand {
     VAR_INT(String),
     VAR_FLOAT(String),

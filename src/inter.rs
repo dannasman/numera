@@ -815,7 +815,7 @@ impl ExprNode for Not {
     }
 
     fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let arg1 = self.expr.reduce_tac(tac_ir.clone());
+        let arg1 = self.reduce_tac(tac_ir.clone());
         (TACOperator::NONE, arg1, TACOperand::NULL)
     }
 
@@ -1413,7 +1413,6 @@ impl StmtNode for Return {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1426,28 +1425,56 @@ mod tests {
             Token::Id(String::from("x")),
             0,
         );
-        assert_eq!(id.to_string(), "x");
+
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = id.gen_tac(tac_ir.clone());
+        let reduced = id.reduce_tac(tac_ir.clone());
+        assert_eq!(tac_ir.len(), 0);
+        assert_eq!(reduced, TACOperand::VAR_INT(String::from("x")));
+        assert_eq!(op, TACOperator::NONE);
+        assert_eq!(arg1, TACOperand::VAR_INT(String::from("x")));
+        assert_eq!(arg2, TACOperand::NULL);
     }
 
     #[test]
     fn test_arith() -> Result<(), &'static str> {
         let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
         let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let artih = Arith::new(
+        let arith = Arith::new(
             Token::Add(String::from("+")),
             Rc::new(RefCell::new(0)),
             ExprUnion::Constant(Rc::new(x)),
             ExprUnion::Constant(Rc::new(y)),
         )?;
-        assert_eq!(artih.to_string(), "1 + 2");
-        assert_eq!(artih.reduce().to_string(), "t1"); // currently reduce() also prints t1 = 1 + 2;
+
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = arith.gen_tac(tac_ir.clone());
+        let reduced = arith.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 1);
+        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(op, TACOperator::ADD);
+        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
+        assert_eq!(arg2, TACOperand::CONST_INT(String::from("2")));
         Ok(())
     }
 
     #[test]
     fn test_temp() {
-        let temp = Temp::new(Token::Id(String::from("t1")), Rc::new(RefCell::new(0)));
-        assert_eq!(temp.to_string(), "t1");
+        let temp = Temp::new(Token::Int(String::from("int")), Rc::new(RefCell::new(0)));
+
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = temp.gen_tac(tac_ir.clone());
+        let reduced = temp.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 0);
+        assert_eq!(reduced , TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(op, TACOperator::NONE);
+        assert_eq!(arg1, TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(arg2, TACOperand::NULL);
     }
 
     #[test]
@@ -1459,14 +1486,32 @@ mod tests {
             ExprUnion::Constant(Rc::new(x)),
         );
 
-        assert_eq!(unary.to_string(), "- 1");
-        assert_eq!(unary.reduce().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = unary.gen_tac(tac_ir.clone());
+        let reduced = unary.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 1);
+        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(op, TACOperator::SUB);
+        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
+        assert_eq!(arg2, TACOperand::NULL);
     }
 
     #[test]
     fn test_constant() {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        assert_eq!(x.to_string(), "1");
+        let constant = Constant::new(Token::Int(String::from("int")), Token::Num(1));
+
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = constant.gen_tac(tac_ir.clone());
+        let reduced = constant.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 0);
+        assert_eq!(reduced, TACOperand::CONST_INT(String::from("1")));
+        assert_eq!(op, TACOperator::NONE);
+        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
+        assert_eq!(arg2, TACOperand::NULL);
     }
 
     #[test]
@@ -1487,8 +1532,17 @@ mod tests {
             ExprUnion::Constant(Rc::new(y)),
         )?;
 
-        assert_eq!(or.to_string(), "true || false");
-        assert_eq!(or.gen().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = or.gen_tac(tac_ir.clone());
+        let reduced = or.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 7);
+        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
+        assert_eq!(op, TACOperator::OR);
+        assert_eq!(arg1, TACOperand::CONST_BOOL(String::from("true")));
+        assert_eq!(arg2, TACOperand::CONST_BOOL(String::from("false")));
+
         Ok(())
     }
 
@@ -1510,8 +1564,17 @@ mod tests {
             ExprUnion::Constant(Rc::new(y)),
         )?;
 
-        assert_eq!(and.to_string(), "true && false");
-        assert_eq!(and.gen().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = and.gen_tac(tac_ir.clone());
+        let reduced = and.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 5);
+        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
+        assert_eq!(op, TACOperator::AND);
+        assert_eq!(arg1, TACOperand::CONST_BOOL(String::from("true")));
+        assert_eq!(arg2, TACOperand::CONST_BOOL(String::from("false")));
+
         Ok(())
     }
 
@@ -1528,8 +1591,17 @@ mod tests {
             ExprUnion::Constant(Rc::new(x)),
         )?;
 
-        assert_eq!(not.to_string(), "! true");
-        assert_eq!(not.gen().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = not.gen_tac(tac_ir.clone());
+        let reduced = not.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 12);
+        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t2")));
+        assert_eq!(op, TACOperator::NONE);
+        assert_eq!(arg1, TACOperand::TEMP_BOOL(String::from("t1")));
+        assert_eq!(arg2, TACOperand::NULL);
+        
         Ok(())
     }
 
@@ -1545,11 +1617,21 @@ mod tests {
             ExprUnion::Constant(Rc::new(y)),
         )?;
 
-        assert_eq!(rel.to_string(), "1 <= 2");
-        assert_eq!(rel.gen().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = rel.gen_tac(tac_ir.clone());
+        let reduced = rel.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 7);
+        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
+        assert_eq!(op, TACOperator::LE);
+        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
+        assert_eq!(arg2, TACOperand::CONST_INT(String::from("2")));
+        
         Ok(())
     }
 
+    /*
     #[test]
     fn test_access() {
         let size = 5;
@@ -1792,5 +1874,5 @@ mod tests {
 
         Ok(())
     }
-}
 */
+}
