@@ -1522,7 +1522,6 @@ mod tests {
             Token::True(String::from("false")),
         );
         let or = Or::new(
-            Token::Or(String::from("||")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
             ExprUnion::Constant(Rc::new(x)),
@@ -1554,7 +1553,6 @@ mod tests {
             Token::True(String::from("false")),
         );
         let and = And::new(
-            Token::And(String::from("&&")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
             ExprUnion::Constant(Rc::new(x)),
@@ -1582,7 +1580,6 @@ mod tests {
             Token::True(String::from("true")),
         );
         let not = Not::new(
-            Token::Not(String::from("!")),
             Rc::new(RefCell::new(0)),
             Rc::new(RefCell::new(0)),
             ExprUnion::Constant(Rc::new(x)),
