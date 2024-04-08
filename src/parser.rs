@@ -1011,11 +1011,8 @@ impl Parser {
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = Not::new(
-                                Rc::clone(&self.label),
-                                Rc::clone(&self.temp_count),
-                                x,
-                            );
+                            let unary =
+                                Not::new(Rc::clone(&self.label), Rc::clone(&self.temp_count), x);
                             match unary {
                                 Ok(u) => Some(ExprUnion::Not(Rc::new(u))),
                                 Err(e) => {
