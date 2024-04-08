@@ -7,8 +7,8 @@
  * TODO:
  * re-evaluate the way conditional jumps are recorded
  */
-use std::fmt;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 
 #[allow(non_snake_case)]
@@ -147,10 +147,7 @@ impl TACState {
         tac_ir.into_iter().for_each(|instruction| {
             let s = format!(
                 "{} {} {} {}",
-                instruction.op,
-                instruction.result,
-                instruction.arg1,
-                instruction.arg2
+                instruction.op, instruction.result, instruction.arg1, instruction.arg2
             );
             println!("{}", s.split_whitespace().collect::<Vec<_>>().join(" "));
         });
