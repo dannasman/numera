@@ -56,6 +56,9 @@ pub enum Token {
     Float(String),
     Bool(String),
     Arr(Array),
+    Def(String),
+    Return(String),
+    Void(String),
 }
 
 impl Token {
@@ -94,6 +97,9 @@ impl Token {
             Token::Float(s) => s,
             Token::Bool(s) => s,
             Token::Arr(a) => a.array_to_string(),
+            Token::Def(s) => s,
+            Token::Return(s) => s,
+            Token::Void(s) => s,
         }
     }
 
@@ -103,7 +109,7 @@ impl Token {
             Token::Float(_) => Ok(8),
             Token::Bool(_) => Ok(1),
             Token::Arr(a) => Ok(a.width),
-            _ => Err("type does not exist"),
+            _ => Err("type void does not have size"),
         }
     }
 }
@@ -129,6 +135,12 @@ impl Lexer {
                 (String::from("int"), Token::Int(String::from("int"))),
                 (String::from("float"), Token::Float(String::from("float"))),
                 (String::from("bool"), Token::Bool(String::from("bool"))),
+                (String::from("def"), Token::Def(String::from("def"))),
+                (
+                    String::from("return"),
+                    Token::Return(String::from("return")),
+                ),
+                (String::from("void"), Token::Void(String::from("void"))),
             ]),
             current_line: 1,
             lines: VecDeque::new(),
@@ -139,7 +151,7 @@ impl Lexer {
 
         while let Some(&c) = it.peek() {
             match c {
-                ' ' | '\t' => {
+                ' ' | '\t' | ',' => {
                     it.next();
                 }
                 '\n' => {
@@ -407,5 +419,17 @@ mod tests {
         lexer.lex(&input);
         let output = format!("{:?}", lexer.tokens);
         assert_eq!(r#"[Real(1.0), Num(1), True("true")]"#, output)
+    }
+
+    #[test]
+    fn correct_function_definition_handling() {
+        let input = String::from("def void f(int a, int b)\n {\nreturn;\n}");
+        let mut lexer = Lexer::new();
+        lexer.lex(&input);
+        let output = format!("{:?}", lexer.tokens);
+        assert_eq!(
+            r#"[Def("def"), Void("void"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")"), Lcb("{"), Return("return"), Scol(";"), Rcb("}")]"#,
+            output
+        )
     }
 }

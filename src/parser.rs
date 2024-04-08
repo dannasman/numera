@@ -1,17 +1,23 @@
 use super::inter::{
-    Access, And, Arith, Break, Constant, Else, ExprUnion, Id, If, Not, Or, Rel, Seq, Set, SetElem,
-    StmtUnion, Unary, While,
+    Access, And, Arith, Break, Call, Constant, Else, ExprUnion, Function, FunctionCall, Id, If,
+    Not, Or, Rel, Return, Seq, Set, SetElem, StmtUnion, Unary, While,
 };
 use super::lexer::{Array, Lexer, Token};
+use super::runtime::ActivationRecord;
+use super::tac::*;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Parser {
     enclosing_stmt: Rc<RefCell<Option<StmtUnion>>>,
+    declarations: Vec<StmtUnion>,
     label: Rc<RefCell<u32>>,
     lexer: Lexer,
     symbol_table: HashMap<String, Id>,
+    activation_record_table: HashMap<String, ActivationRecord>,
+    //activation_record_stack: Vec<ActivationRecord>,
     temp_count: Rc<RefCell<u32>>,
     used: u32,
 }
@@ -20,9 +26,12 @@ impl Parser {
     pub fn new(lexer: Lexer) -> Self {
         Parser {
             enclosing_stmt: Rc::new(RefCell::new(None)),
+            declarations: Vec::new(),
             label: Rc::new(RefCell::new(0)),
             lexer,
             symbol_table: HashMap::new(),
+            activation_record_table: HashMap::new(),
+            //activation_record_stack: Vec::new(),
             temp_count: Rc::new(RefCell::new(0)),
             used: 0,
         }
@@ -36,7 +45,7 @@ impl Parser {
         }
     }
 
-    pub fn program(&mut self, input: &str) {
+    pub fn program(&mut self, input: &str, tac_ir: TACState) {
         self.lexer.lex(input);
 
         let stmt = self.block();
@@ -48,9 +57,13 @@ impl Parser {
             let after = *l;
             drop(l);
 
-            s.emit_label(begin);
-            s.gen(begin, after);
-            s.emit_label(after);
+            self.declarations.iter().for_each(|s| {
+                s.gen_tac(tac_ir.clone(), begin, after);
+            });
+
+            s.emit_label(tac_ir.clone(), begin);
+            s.gen_tac(tac_ir.clone(), begin, after);
+            s.emit_label(tac_ir.clone(), after);
         }
     }
 
@@ -256,10 +269,162 @@ impl Parser {
                         }
                     }
                 }
+                Token::Def(_) => {
+                    self.lexer.tokens.pop_front();
+                    let function_line = self.get_line();
+                    if let Some(tp @ Token::Int(_))
+                    | Some(tp @ Token::Float(_))
+                    | Some(tp @ Token::Bool(_))
+                    | Some(tp @ Token::Void(_)) = self.lexer.tokens.pop_front()
+                    {
+                        self.get_line();
+                        if let Some(Token::Id(id_s)) = self.lexer.tokens.pop_front() {
+                            self.get_line();
+                            if self.symbol_table.get_mut(&id_s).is_some() {
+                                panic!(
+                                    "Error at line {}: function {} already declared",
+                                    function_line, id_s
+                                );
+                            } else {
+                                let id =
+                                    Id::new(tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
+
+                                // TODO: evaluate necessity of this
+                                /*
+                                match tp.get_width() {
+                                    Ok(w) => self.used += w,
+                                    Err(e) => panic!("Error at line {}: {}", function_line, e),
+                                }
+                                */
+
+                                self.symbol_table.insert(id_s.to_owned(), id.clone());
+                                self.get_line();
+                                if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match (",
+                                        function_line
+                                    );
+                                }
+                                let params = self.params();
+                                self.get_line();
+                                if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match )",
+                                        function_line
+                                    );
+                                }
+
+                                let saved_symbol_table = self.symbol_table.clone();
+
+                                params.iter().for_each(|p| {
+                                    self.symbol_table
+                                        .insert(p.token.to_owned().value_to_string(), p.clone());
+                                });
+
+                                self.get_line();
+                                if let Some(Token::Lcb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match {{",
+                                        function_line
+                                    );
+                                }
+
+                                self.activation_record_table.insert(
+                                    id_s.to_owned(),
+                                    ActivationRecord::new(tp, params.to_owned()),
+                                );
+
+                                let stmt = self.stmts();
+
+                                self.get_line();
+                                if let Some(Token::Rcb(_)) = self.lexer.tokens.pop_front() {
+                                } else {
+                                    panic!(
+                                        "Error at line {}: token did not match }}",
+                                        function_line
+                                    );
+                                }
+
+                                self.symbol_table = saved_symbol_table;
+
+                                let function_stmt =
+                                    StmtUnion::Function(Rc::new(Function::new(id_s, params, stmt)));
+                                self.declarations.push(function_stmt);
+                                None
+                            }
+                        } else {
+                            panic!("Error at line {}: failed to define function due to missing function name", function_line)
+                        }
+                    } else {
+                        panic!("Error at line {}: failed to define function due to missing function type", function_line);
+                    }
+                }
+                Token::Return(_) => {
+                    self.lexer.tokens.pop_front();
+                    let return_line = self.get_line();
+
+                    if let Some(Token::Scol(_)) = self.lexer.tokens.front() {
+                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(None)));
+                        Some(return_stmt)
+                    } else {
+                        let expr = self.expr();
+
+                        self.get_line();
+                        if let Some(Token::Scol(_)) = self.lexer.tokens.pop_front() {
+                        } else {
+                            panic!("Error at line {}: token did not match ;", return_line);
+                        }
+
+                        self.get_line();
+                        if let Some(Token::Rcb(_)) = self.lexer.tokens.front() {
+                        } else {
+                            panic!(
+                                "Error at line {}: body should end after return",
+                                return_line
+                            );
+                        }
+
+                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(expr)));
+                        Some(return_stmt)
+                    }
+                }
                 _ => self.assign(),
             },
             None => None,
         }
+    }
+
+    fn params(&mut self) -> Vec<Id> {
+        let params_line = self.get_line();
+        let mut params_vec: Vec<Id> = Vec::new();
+        while let Some(tp @ Token::Int(_))
+        | Some(tp @ Token::Float(_))
+        | Some(tp @ Token::Bool(_)) = self.lexer.tokens.front()
+        {
+            let param_tp = tp.to_owned();
+            self.lexer.tokens.pop_front();
+            self.get_line();
+            if let Some(Token::Id(id_s)) = self.lexer.tokens.front() {
+                let id_string = id_s.to_owned();
+                self.lexer.tokens.pop_front();
+                self.get_line();
+                if self.symbol_table.get_mut(&id_string).is_some() {
+                    panic!(
+                        "Error at line {}: parameter {} already declared",
+                        params_line, id_string
+                    );
+                } else {
+                    let id = Id::new(param_tp, Token::Id(id_string), self.used);
+                    params_vec.push(id);
+                }
+            } else {
+                panic!("Error at line {}: missing parameter name", params_line);
+            }
+        }
+        params_vec
     }
 
     fn dims(&mut self, tp: Token) -> Token {
@@ -371,14 +536,45 @@ impl Parser {
                     Some(sym) => {
                         let id = sym.to_owned();
                         match self.lexer.tokens.front() {
-                            Some(token) => {
-                                if let Token::Asgn(_) = token {
-                                    self.lexer.tokens.pop_front();
-                                    self.get_line();
+                            Some(Token::Asgn(_)) => {
+                                self.lexer.tokens.pop_front();
+                                self.get_line();
+                                let expr = self.boolean();
+                                match expr {
+                                    Some(x) => {
+                                        let set_stmt = Set::new(id, x);
+                                        match set_stmt {
+                                            Ok(set) => {
+                                                t = self.lexer.tokens.pop_front();
+                                                self.get_line();
+                                                if let Some(Token::Scol(_)) = t {
+                                                } else {
+                                                    panic!(
+                                                        "Error at line {}: token did not match ;",
+                                                        line
+                                                    );
+                                                }
+                                                Some(StmtUnion::Set(Rc::new(set)))
+                                            }
+                                            Err(e) => {
+                                                panic!("Error at line {}: {}", line, e);
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        panic!("Error at line {}: expression missing", line);
+                                    }
+                                }
+                            }
+                            Some(Token::Lsb(_)) => {
+                                let access = self.offset(id);
+                                t = self.lexer.tokens.pop_front();
+                                self.get_line();
+                                if let Some(Token::Asgn(_)) = t {
                                     let expr = self.boolean();
                                     match expr {
                                         Some(x) => {
-                                            let set_stmt = Set::new(id, x);
+                                            let set_stmt = SetElem::new(access, x);
                                             match set_stmt {
                                                 Ok(set) => {
                                                     t = self.lexer.tokens.pop_front();
@@ -386,11 +582,11 @@ impl Parser {
                                                     if let Some(Token::Scol(_)) = t {
                                                     } else {
                                                         panic!(
-                                                            "Error at line {}: token did not match ;",
-                                                            line
-                                                        );
+                                                                "Error at line {}: token did not match ;",
+                                                                line
+                                                            );
                                                     }
-                                                    Some(StmtUnion::Set(Rc::new(set)))
+                                                    Some(StmtUnion::SetElem(Rc::new(set)))
                                                 }
                                                 Err(e) => {
                                                     panic!("Error at line {}: {}", line, e);
@@ -402,49 +598,37 @@ impl Parser {
                                         }
                                     }
                                 } else {
-                                    if let Token::Lsb(_) = token {
-                                    } else {
-                                        panic!("Error at line {}: invalid assign statement", line);
-                                    }
-                                    let access = self.offset(id);
-                                    t = self.lexer.tokens.pop_front();
-                                    self.get_line();
-                                    if let Some(Token::Asgn(_)) = t {
-                                        let expr = self.boolean();
-                                        match expr {
-                                            Some(x) => {
-                                                let set_stmt = SetElem::new(access, x);
-                                                match set_stmt {
-                                                    Ok(set) => {
-                                                        t = self.lexer.tokens.pop_front();
-                                                        self.get_line();
-                                                        if let Some(Token::Scol(_)) = t {
-                                                        } else {
-                                                            panic!(
-                                                                "Error at line {}: token did not match ;",
-                                                                line
-                                                            );
-                                                        }
-                                                        Some(StmtUnion::SetElem(Rc::new(set)))
-                                                    }
-                                                    Err(e) => {
-                                                        panic!("Error at line {}: {}", line, e);
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                panic!(
-                                                    "Error at line {}: expression missing",
-                                                    line
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        panic!("Error at line {}: token did not match =", line);
-                                    }
+                                    panic!("Error at line {}: token did not match =", line);
                                 }
                             }
-                            None => None,
+                            Some(Token::Lrb(_)) => {
+                                if let Some(ar) = self.activation_record_table.get_mut(&id_s) {
+                                    let activation_record = ar.to_owned();
+                                    let func_id = sym.to_owned();
+                                    let args: Vec<ExprUnion> = self.args();
+
+                                    if !activation_record
+                                        .params
+                                        .iter()
+                                        .zip(args.iter())
+                                        .all(|(p, a)| p.tp == a.get_type())
+                                    {
+                                        panic!("Error at line {}: argument types did not match function parameter types", line);
+                                    }
+
+                                    let call_expr =
+                                        Call::new(func_id, args, Rc::clone(&self.temp_count));
+
+                                    let call_stmt = FunctionCall::new(call_expr);
+                                    match call_stmt {
+                                        Ok(call) => Some(StmtUnion::FunctionCall(Rc::new(call))),
+                                        Err(e) => panic!("Error at line {}: {}", line, e),
+                                    }
+                                } else {
+                                    panic!("Error at line {}: function not declared", line);
+                                }
+                            }
+                            _ => panic!("Error at line {}: invalid assign statement", line),
                         }
                     }
                     None => {
@@ -460,8 +644,7 @@ impl Parser {
 
     fn boolean(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.join();
-        while let Some(Token::Or(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+        while let Some(Token::Or(_)) = self.lexer.tokens.front() {
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -470,7 +653,6 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let or = Or::new(
-                                Token::Or(token_string),
                                 Rc::clone(&self.label),
                                 Rc::clone(&self.temp_count),
                                 x1,
@@ -500,8 +682,7 @@ impl Parser {
 
     fn join(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.equality();
-        while let Some(Token::And(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+        while let Some(Token::And(_)) = self.lexer.tokens.front() {
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -510,7 +691,6 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let and = And::new(
-                                Token::And(token_string),
                                 Rc::clone(&self.label),
                                 Rc::clone(&self.temp_count),
                                 x1,
@@ -825,18 +1005,14 @@ impl Parser {
                         }
                         None => None,
                     }
-                } else if let Token::Not(s) = t.clone() {
+                } else if let Token::Not(_) = t.clone() {
                     self.lexer.tokens.pop_front();
                     let line = self.get_line();
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
-                            let unary = Not::new(
-                                Token::Not(s),
-                                Rc::clone(&self.label),
-                                Rc::clone(&self.temp_count),
-                                x,
-                            );
+                            let unary =
+                                Not::new(Rc::clone(&self.label), Rc::clone(&self.temp_count), x);
                             match unary {
                                 Ok(u) => Some(ExprUnion::Not(Rc::new(u))),
                                 Err(e) => {
@@ -912,12 +1088,42 @@ impl Parser {
                     let symbol = self.symbol_table.get(&s);
                     match symbol {
                         Some(sym) => {
-                            let id = ExprUnion::Id(Rc::new(sym.clone()));
-                            if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
-                                let access = self.offset(sym.to_owned());
-                                return Some(ExprUnion::Access(Rc::new(access)));
+                            let id = ExprUnion::Id(Rc::new(sym.to_owned()));
+                            match self.lexer.tokens.front() {
+                                Some(Token::Lsb(_)) => {
+                                    let access = self.offset(sym.to_owned());
+                                    Some(ExprUnion::Access(Rc::new(access)))
+                                }
+                                Some(Token::Lrb(_)) => {
+                                    if let Some(ar) = self.activation_record_table.get_mut(&s) {
+                                        let activation_record = ar.to_owned();
+
+                                        let func_id = sym.to_owned();
+
+                                        let args: Vec<ExprUnion> = self.args();
+
+                                        if !activation_record
+                                            .params
+                                            .iter()
+                                            .zip(args.iter())
+                                            .all(|(p, a)| p.tp == a.get_type())
+                                        {
+                                            panic!("Error at line {}: argument types did not match function parameter types", line);
+                                        }
+
+                                        let call = ExprUnion::Call(Rc::new(Call::new(
+                                            func_id,
+                                            args,
+                                            Rc::clone(&self.temp_count),
+                                        )));
+
+                                        Some(call)
+                                    } else {
+                                        panic!("Error at line {}: function not declared", line);
+                                    }
+                                }
+                                _ => Some(id),
                             }
-                            Some(id)
                         }
                         None => {
                             panic!("Error at line {}: {} undeclared", line, s);
@@ -931,6 +1137,39 @@ impl Parser {
             },
             None => None,
         }
+    }
+
+    fn args(&mut self) -> Vec<ExprUnion> {
+        let mut args_vec: Vec<ExprUnion> = Vec::new();
+
+        let args_line = self.get_line();
+
+        if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
+        } else {
+            panic!("Error at line {}: missing (", args_line);
+        }
+
+        while let Some(Token::Id(_))
+        | Some(Token::True(_))
+        | Some(Token::False(_))
+        | Some(Token::Num(_))
+        | Some(Token::Real(_))
+        | Some(Token::Lrb(_)) = self.lexer.tokens.front()
+        {
+            if let Some(expr) = self.boolean() {
+                args_vec.push(expr);
+            } else {
+                panic!("Error at line {}: missing expression", args_line);
+            }
+        }
+
+        if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
+        } else {
+            panic!("Error at line {}: missing )", args_line);
+        }
+
+        args_vec.reverse();
+        args_vec
     }
 
     fn offset(&mut self, a: Id) -> Access {
