@@ -86,11 +86,10 @@ GOTO L2 iffalse t8
 L8:
 MUL t9 i 4
 PUSH i
-CALL t10 fib
-n [ t9 ] t10
+CALL n [ t9 ] fib
 GOTO L7
 L2:
-Code compiled in 69.194µs
+Code compiled in 82.338µs
 ```
 ## Run tests
 Run tests by running the following command:
