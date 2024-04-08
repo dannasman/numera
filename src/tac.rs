@@ -7,10 +7,12 @@
  * TODO:
  * re-evaluate the way conditional jumps are recorded
  */
-
+use std::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum TACOperator {
     ADD,
@@ -23,7 +25,6 @@ pub enum TACOperator {
     GE,
     LT,
     LE,
-    ASGN,
     AND,
     OR,
     PUSH,
@@ -34,32 +35,33 @@ pub enum TACOperator {
     NONE,
 }
 
-impl TACOperator {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for TACOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TACOperator::ADD => String::from("ADD"),
-            TACOperator::SUB => String::from("SUB"),
-            TACOperator::MUL => String::from("MUL"),
-            TACOperator::DIV => String::from("DIV"),
-            TACOperator::EQ => String::from("EQ"),
-            TACOperator::NEQ => String::from("NEQ"),
-            TACOperator::GT => String::from("GT"),
-            TACOperator::GE => String::from("GE"),
-            TACOperator::LT => String::from("LT"),
-            TACOperator::LE => String::from("LE"),
-            TACOperator::ASGN => String::from("="),
-            TACOperator::AND => String::from("AND"),
-            TACOperator::OR => String::from("OR"),
-            TACOperator::PUSH => String::from("PUSH"),
-            TACOperator::POP => String::from("POP"),
-            TACOperator::GOTO => String::from("GOTO"),
-            TACOperator::CALL => String::from("CALL"),
-            TACOperator::RET => String::from("RET"),
-            TACOperator::NONE => String::from(""),
+            TACOperator::ADD => write!(f, "ADD"),
+            TACOperator::SUB => write!(f, "SUB"),
+            TACOperator::MUL => write!(f, "MUL"),
+            TACOperator::DIV => write!(f, "DIV"),
+            TACOperator::EQ => write!(f, "EQ"),
+            TACOperator::NEQ => write!(f, "NEQ"),
+            TACOperator::GT => write!(f, "GT"),
+            TACOperator::GE => write!(f, "GE"),
+            TACOperator::LT => write!(f, "LT"),
+            TACOperator::LE => write!(f, "LE"),
+            TACOperator::AND => write!(f, "AND"),
+            TACOperator::OR => write!(f, "OR"),
+            TACOperator::PUSH => write!(f, "PUSH"),
+            TACOperator::POP => write!(f, "POP"),
+            TACOperator::GOTO => write!(f, "GOTO"),
+            TACOperator::CALL => write!(f, "CALL"),
+            TACOperator::RET => write!(f, "RET"),
+            TACOperator::NONE => write!(f, ""),
         }
     }
 }
 
+#[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum TACOperand {
     VAR_INT(String),
@@ -78,25 +80,25 @@ pub enum TACOperand {
     NULL,
 }
 
-impl TACOperand {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for TACOperand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            TACOperand::VAR_INT(s) => s.to_owned(),
-            TACOperand::VAR_FLOAT(s) => s.to_owned(),
-            TACOperand::VAR_BOOL(s) => s.to_owned(),
-            TACOperand::TEMP_INT(s) => s.to_owned(),
-            TACOperand::TEMP_FLOAT(s) => s.to_owned(),
-            TACOperand::TEMP_BOOL(s) => s.to_owned(),
-            TACOperand::CONST_INT(s) => s.to_owned(),
-            TACOperand::CONST_FLOAT(s) => s.to_owned(),
-            TACOperand::CONST_BOOL(s) => s.to_owned(),
-            TACOperand::LABEL(s) => s.to_owned(),
+            TACOperand::VAR_INT(s) => write!(f, "{}", s),
+            TACOperand::VAR_FLOAT(s) => write!(f, "{}", s),
+            TACOperand::VAR_BOOL(s) => write!(f, "{}", s),
+            TACOperand::TEMP_INT(s) => write!(f, "{}", s),
+            TACOperand::TEMP_FLOAT(s) => write!(f, "{}", s),
+            TACOperand::TEMP_BOOL(s) => write!(f, "{}", s),
+            TACOperand::CONST_INT(s) => write!(f, "{}", s),
+            TACOperand::CONST_FLOAT(s) => write!(f, "{}", s),
+            TACOperand::CONST_BOOL(s) => write!(f, "{}", s),
+            TACOperand::LABEL(s) => write!(f, "{}", s),
             TACOperand::ACCESS(operand1, operand2) => {
-                format!("{} [ {} ]", operand1.to_string(), operand2.to_string())
+                write!(f, "{} [ {} ]", operand1, operand2)
             }
-            TACOperand::IF => String::from("if"),
-            TACOperand::IFFALSE => String::from("iffalse"),
-            TACOperand::NULL => String::from(""),
+            TACOperand::IF => write!(f, "if"),
+            TACOperand::IFFALSE => write!(f, "iffalse"),
+            TACOperand::NULL => write!(f, ""),
         }
     }
 }
@@ -134,6 +136,7 @@ impl TACState {
         drop(state);
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         let size = self.0.borrow().len();
         size
@@ -144,10 +147,10 @@ impl TACState {
         tac_ir.into_iter().for_each(|instruction| {
             let s = format!(
                 "{} {} {} {}",
-                instruction.op.to_string(),
-                instruction.result.to_string(),
-                instruction.arg1.to_string(),
-                instruction.arg2.to_string()
+                instruction.op,
+                instruction.result,
+                instruction.arg1,
+                instruction.arg2
             );
             println!("{}", s.split_whitespace().collect::<Vec<_>>().join(" "));
         });
@@ -159,12 +162,3 @@ impl Clone for TACState {
         TACState(Rc::clone(&self.0))
     }
 }
-
-/*
-
-        let mut c = temp_count.borrow_mut();
-        *c += 1;
-        let number = *c;
-        drop(c);
-        Temp { tp, number }
-*/

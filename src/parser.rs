@@ -644,8 +644,7 @@ impl Parser {
 
     fn boolean(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.join();
-        while let Some(Token::Or(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+        while let Some(Token::Or(_)) = self.lexer.tokens.front() {
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -654,7 +653,6 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let or = Or::new(
-                                Token::Or(token_string),
                                 Rc::clone(&self.label),
                                 Rc::clone(&self.temp_count),
                                 x1,
@@ -684,8 +682,7 @@ impl Parser {
 
     fn join(&mut self) -> Option<ExprUnion> {
         let mut expr1 = self.equality();
-        while let Some(Token::And(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
+        while let Some(Token::And(_)) = self.lexer.tokens.front() {
             self.lexer.tokens.pop_front();
             let line = self.get_line();
             match expr1 {
@@ -694,7 +691,6 @@ impl Parser {
                     match expr2 {
                         Some(x2) => {
                             let and = And::new(
-                                Token::And(token_string),
                                 Rc::clone(&self.label),
                                 Rc::clone(&self.temp_count),
                                 x1,
@@ -1009,14 +1005,13 @@ impl Parser {
                         }
                         None => None,
                     }
-                } else if let Token::Not(s) = t.clone() {
+                } else if let Token::Not(_) = t.clone() {
                     self.lexer.tokens.pop_front();
                     let line = self.get_line();
                     let expr = self.unary();
                     match expr {
                         Some(x) => {
                             let unary = Not::new(
-                                Token::Not(s),
                                 Rc::clone(&self.label),
                                 Rc::clone(&self.temp_count),
                                 x,

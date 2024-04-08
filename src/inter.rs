@@ -310,9 +310,15 @@ impl Call {
 
 impl ExprNode for Call {
     fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
+        self.params.iter().for_each(|e| {
+            let arg1 = e.reduce_tac(tac_ir.clone());
+            let instruction =
+                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
+            tac_ir.push(instruction);
+        });
         (
-            TACOperator::NONE,
-            self.reduce_tac(tac_ir.clone()),
+            TACOperator::CALL,
+            self.id.reduce_tac(tac_ir.clone()),
             TACOperand::NULL,
         )
     }
@@ -579,7 +585,6 @@ impl ExprNode for Constant {
 #[derive(Debug, Clone)]
 pub struct Or {
     tp: Token, //type
-    op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
     expr1: ExprUnion,
@@ -588,7 +593,6 @@ pub struct Or {
 
 impl Or {
     pub fn new(
-        op: Token,
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
@@ -598,7 +602,6 @@ impl Or {
             if let Token::Bool(_) = expr2.get_type() {
                 return Ok(Or {
                     tp: Token::Bool(s1),
-                    op,
                     label,
                     temp_count,
                     expr1,
@@ -681,7 +684,6 @@ impl ExprNode for Or {
 #[derive(Debug, Clone)]
 pub struct And {
     tp: Token, //type
-    op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
     expr1: ExprUnion,
@@ -690,7 +692,6 @@ pub struct And {
 
 impl And {
     pub fn new(
-        op: Token,
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
         expr1: ExprUnion,
@@ -700,7 +701,6 @@ impl And {
             if let Token::Bool(_) = expr2.get_type() {
                 return Ok(And {
                     tp: Token::Bool(s1),
-                    op,
                     label,
                     temp_count,
                     expr1,
@@ -783,7 +783,6 @@ impl ExprNode for And {
 #[derive(Debug, Clone)]
 pub struct Not {
     tp: Token,
-    op: Token,
     label: Rc<RefCell<u32>>,
     temp_count: Rc<RefCell<u32>>,
     expr: ExprUnion,
@@ -791,7 +790,6 @@ pub struct Not {
 
 impl Not {
     pub fn new(
-        op: Token,
         label: Rc<RefCell<u32>>,
         temp_count: Rc<RefCell<u32>>,
         expr: ExprUnion,
@@ -799,7 +797,6 @@ impl Not {
         if let Token::Bool(s) = expr.get_type() {
             return Ok(Not {
                 tp: Token::Bool(s),
-                op,
                 label,
                 temp_count,
                 expr,
@@ -983,7 +980,7 @@ impl ExprNode for Rel {
 #[derive(Debug, Clone)]
 pub struct Access {
     tp: Token, //type
-    token: Token,
+    _token: Token,
     temp_count: Rc<RefCell<u32>>,
     array: Id,
     index: ExprUnion,
@@ -993,7 +990,7 @@ impl Access {
     pub fn new(tp: Token, temp_count: Rc<RefCell<u32>>, array: Id, index: ExprUnion) -> Self {
         Access {
             tp,
-            token: Token::Id(String::from("[]")),
+            _token: Token::Id(String::from("[]")),
             temp_count,
             array,
             index,
@@ -1364,7 +1361,7 @@ impl FunctionCall {
 }
 
 impl StmtNode for FunctionCall {
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
+    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
         self.call.params.iter().for_each(|e| {
             let arg1 = e.reduce_tac(tac_ir.clone());
             let instruction =
@@ -1395,7 +1392,7 @@ impl Return {
 }
 
 impl StmtNode for Return {
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
+    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
         if let Some(e) = &self.expr {
             let arg1 = e.reduce_tac(tac_ir.clone());
             let instruction =
@@ -1471,7 +1468,7 @@ mod tests {
         let reduced = temp.reduce_tac(tac_ir.clone());
 
         assert_eq!(tac_ir.len(), 0);
-        assert_eq!(reduced , TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
         assert_eq!(op, TACOperator::NONE);
         assert_eq!(arg1, TACOperand::TEMP_INT(String::from("t1")));
         assert_eq!(arg2, TACOperand::NULL);
@@ -1601,7 +1598,7 @@ mod tests {
         assert_eq!(op, TACOperator::NONE);
         assert_eq!(arg1, TACOperand::TEMP_BOOL(String::from("t1")));
         assert_eq!(arg2, TACOperand::NULL);
-        
+
         Ok(())
     }
 
@@ -1627,11 +1624,10 @@ mod tests {
         assert_eq!(op, TACOperator::LE);
         assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
         assert_eq!(arg2, TACOperand::CONST_INT(String::from("2")));
-        
+
         Ok(())
     }
 
-    /*
     #[test]
     fn test_access() {
         let size = 5;
@@ -1640,7 +1636,7 @@ mod tests {
         let tp = Token::Arr(Array::new(size, of, w));
 
         let array = Id::new(tp, Token::Id(String::from("x")), 0);
-        let index = Constant::new(Token::Int(String::from("bool")), Token::Num(0));
+        let index = Constant::new(Token::Int(String::from("int")), Token::Num(0));
         let access = Access::new(
             Token::Int(String::from("int")),
             Rc::new(RefCell::new(0)),
@@ -1648,9 +1644,22 @@ mod tests {
             ExprUnion::Constant(Rc::from(index)),
         );
 
-        assert_eq!(access.to_string(), "x [ 0 ]");
-        assert_eq!(access.gen().to_string(), "x [ 0 ]");
-        assert_eq!(access.reduce().to_string(), "t1");
+        let tac_ir = TACState::new();
+
+        let (op, arg1, arg2) = access.gen_tac(tac_ir.clone());
+        let reduced = access.reduce_tac(tac_ir.clone());
+
+        assert_eq!(tac_ir.len(), 1);
+        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
+        assert_eq!(op, TACOperator::NONE);
+        assert_eq!(
+            arg1,
+            TACOperand::ACCESS(
+                Box::new(TACOperand::VAR_INT(String::from("x"))),
+                Box::new(TACOperand::CONST_INT(String::from("0")))
+            )
+        );
+        assert_eq!(arg2, TACOperand::NULL);
     }
 
     #[test]
@@ -1673,11 +1682,18 @@ mod tests {
         );
         let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
 
-        let _if_stmt = If::new(
+        let if_stmt = If::new(
             Rc::new(RefCell::new(0)),
             ExprUnion::Rel(Rc::new(rel)),
             StmtUnion::Set(Rc::new(set)),
         )?;
+
+        let tac_ir = TACState::new();
+
+        if_stmt.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 4);
+
         Ok(())
     }
 
@@ -1708,12 +1724,19 @@ mod tests {
         let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
         let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
 
-        let _else_stmt = Else::new(
+        let else_stmt = Else::new(
             Rc::new(RefCell::new(0)),
             ExprUnion::Rel(Rc::new(rel)),
             StmtUnion::Set(Rc::new(set1)),
             StmtUnion::Set(Rc::new(set2)),
         )?;
+
+        let tac_ir = TACState::new();
+
+        else_stmt.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 7);
+
         Ok(())
     }
 
@@ -1742,6 +1765,13 @@ mod tests {
             Some(ExprUnion::Rel(Rc::new(rel))),
             Some(StmtUnion::Set(Rc::new(set))),
         )?;
+
+        let tac_ir = TACState::new();
+
+        while_stmt.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 5);
+
         Ok(())
     }
 
@@ -1753,7 +1783,14 @@ mod tests {
             Token::Id(String::from("x")),
             0,
         );
-        let _set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
+        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
+
+        let tac_ir = TACState::new();
+
+        set.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 1);
+
         Ok(())
     }
 
@@ -1765,7 +1802,7 @@ mod tests {
         let tp = Token::Arr(Array::new(size, of, w));
 
         let array = Id::new(tp, Token::Id(String::from("x")), 0);
-        let index = Constant::new(Token::Int(String::from("bool")), Token::Num(0));
+        let index = Constant::new(Token::Int(String::from("int")), Token::Num(0));
         let x = Access::new(
             Token::Int(String::from("int")),
             Rc::new(RefCell::new(0)),
@@ -1774,7 +1811,13 @@ mod tests {
         );
         let y = Constant::new(Token::Int(String::from("int")), Token::Num(3));
 
-        let _set_elem = SetElem::new(x, ExprUnion::Constant(Rc::new(y)))?;
+        let set_elem = SetElem::new(x, ExprUnion::Constant(Rc::new(y)))?;
+
+        let tac_ir = TACState::new();
+
+        set_elem.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 1);
 
         Ok(())
     }
@@ -1796,11 +1839,17 @@ mod tests {
         let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
         let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
 
-        let _seq = Seq::new(
+        let seq = Seq::new(
             Rc::new(RefCell::new(0)),
             Some(StmtUnion::Set(Rc::new(set1))),
             Some(StmtUnion::Set(Rc::new(set2))),
         );
+
+        let tac_ir = TACState::new();
+
+        seq.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 3);
 
         Ok(())
     }
@@ -1808,7 +1857,14 @@ mod tests {
     #[test]
     fn test_break() -> Result<(), &'static str> {
         let while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
-        let _break_stmt = Break::new(Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
+        let break_stmt = Break::new(Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
+
+        let tac_ir = TACState::new();
+
+        break_stmt.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 1);
+
         Ok(())
     }
 
@@ -1839,11 +1895,17 @@ mod tests {
             Some(StmtUnion::Set(Rc::new(set))),
         )?;
 
-        let _function_stmt = Function::new(
+        let function_stmt = Function::new(
             String::from("f"),
             vec![id],
             Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))),
         );
+
+        let tac_ir = TACState::new();
+
+        function_stmt.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 7);
 
         Ok(())
     }
@@ -1866,13 +1928,25 @@ mod tests {
         let call_void = Call::new(id_void, vec![], Rc::clone(&temp_count));
         let call_int = Call::new(id_int, vec![], Rc::clone(&temp_count));
 
-        let function_call_void = FunctionCall::new(call_void);
-        let function_call_int = FunctionCall::new(call_int);
+        let function_call_void = FunctionCall::new(call_void)?;
 
-        assert!(function_call_void.is_ok());
-        assert!(function_call_int.is_err());
+        let id = Id::new(
+            Token::Int(String::from("int")),
+            Token::Id(String::from("x")),
+            0,
+        );
+        let set = Set::new(id, ExprUnion::Call(Rc::new(call_int)))?;
+
+        let tac_ir = TACState::new();
+
+        function_call_void.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 1);
+
+        set.gen_tac(tac_ir.clone(), 1, 2);
+
+        assert_eq!(tac_ir.len(), 2);
 
         Ok(())
     }
-*/
 }
