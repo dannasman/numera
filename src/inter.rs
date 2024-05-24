@@ -253,23 +253,29 @@ impl ExprNode for Id {
                 TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
                 TACOperand::NULL,
             ),
-            Token::Arr(arr) => match *arr.of {
-                Token::Int(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                Token::Float(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                Token::Bool(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
+            Token::Arr(arr) => {
+                let mut tp = *arr.of.to_owned();
+                while let Token::Arr(arr_enclosed) = tp {
+                    tp = *arr_enclosed.of
+                }
+                match tp {
+                    Token::Int(_) => (
+                        TACOperator::NONE,
+                        TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
+                        TACOperand::NULL,
+                    ),
+                    Token::Float(_) => (
+                        TACOperator::NONE,
+                        TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
+                        TACOperand::NULL,
+                    ),
+                    Token::Bool(_) => (
+                        TACOperator::NONE,
+                        TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
+                        TACOperand::NULL,
+                    ),
+                    _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
+                }
             },
             _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
         }
@@ -280,11 +286,17 @@ impl ExprNode for Id {
             Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
             Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
             Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-            Token::Arr(arr) => match *arr.of {
-                Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-                Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-                Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-                _ => TACOperand::NULL,
+            Token::Arr(arr) => {
+                let mut tp = *arr.of.to_owned();
+                while let Token::Arr(arr_enclosed) = tp {
+                    tp = *arr_enclosed.of
+                }
+                match tp {
+                    Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
+                    Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
+                    Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
+                    _ => TACOperand::NULL,
+                }
             },
             _ => TACOperand::NULL,
         }

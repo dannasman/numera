@@ -6,6 +6,7 @@
  * add more if necessary
  * TODO:
  * re-evaluate the way conditional jumps are recorded
+ * add size to TACOperand variables and temporaries (maybe constants also)
  */
 use std::cell::RefCell;
 use std::fmt;
