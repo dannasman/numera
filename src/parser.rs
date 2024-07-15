@@ -3,7 +3,7 @@ use std::convert::Into;
 use std::mem::swap;
 
 use super::inter::*;
-use super::lexer::{Lexer};
+use super::lexer::Lexer;
 use super::tokens::{Tag, Token};
 
 const OPEN_BR: u32 = b'{' as u32;
@@ -50,7 +50,7 @@ impl Env {
         swap(&mut self.prev, &mut res);
         match *res {
             Some(env) => Ok(Box::new(env)),
-            None => Err(String::from("Popping empty environment"))
+            None => Err(String::from("Popping empty environment")),
         }
     }
 
@@ -59,7 +59,9 @@ impl Env {
             self.table.insert(String::from(key), value);
             Ok(())
         } else {
-            Err(String::from("Only id expressions can be added to symbol table"))
+            Err(String::from(
+                "Only id expressions can be added to symbol table",
+            ))
         }
     }
 
@@ -80,7 +82,7 @@ pub struct Parser<T: std::io::Read> {
     lex: Lexer<T>,
     look: Token,
     top: Box<Env>,
-    used: i64
+    used: i64,
 }
 
 impl<T: std::io::Read> Parser<T> {
@@ -108,14 +110,17 @@ impl<T: std::io::Read> Parser<T> {
     fn next(&mut self) -> Result<(), String> {
         self.look = match self.lex.scan() {
             Ok(token) => token,
-            Err(err) => return Err(format!("{} near line {}", err, self.lex.line))
+            Err(err) => return Err(format!("{} near line {}", err, self.lex.line)),
         };
         Ok(())
     }
 
     fn match_token<U: Into<u32>>(&mut self, tag: U) -> Result<(), String> {
         if !self.look.match_tag(tag) {
-            return Err(format!("Syntax error near line {}, ({})", self.lex.line, self.look));
+            return Err(format!(
+                "Syntax error near line {}, ({})",
+                self.lex.line, self.look
+            ));
         }
         self.next()
     }
@@ -152,7 +157,7 @@ impl<T: std::io::Read> Parser<T> {
         let tp = Type::new(self.look.to_owned())?;
         self.match_token(Tag::BASIC)?;
         if !self.look.match_tag(b'[') {
-            return Ok(tp)
+            return Ok(tp);
         }
         self.dims(tp)
     }
@@ -162,8 +167,8 @@ impl<T: std::io::Read> Parser<T> {
         let token = self.look.to_owned();
         self.match_token(Tag::NUM)?;
         let size = match token {
-            Token::Num(val) =>  val,
-            _ => return Err(format!("Syntax error near line {}", self.lex.line))
+            Token::Num(val) => val,
+            _ => return Err(format!("Syntax error near line {}", self.lex.line)),
         };
         self.match_token(b']')?;
 
@@ -188,7 +193,7 @@ impl<T: std::io::Read> Parser<T> {
             SEMICOLON => {
                 self.next()?;
                 Ok(StmtNode::box_null())
-            },
+            }
             IF => {
                 self.match_token(IF)?;
                 self.match_token(b'(')?;
@@ -197,13 +202,13 @@ impl<T: std::io::Read> Parser<T> {
                 let body = self.stmt()?;
                 if !self.look.match_tag(Tag::ELSE) {
                     let if_stmt = StmtNode::box_if(expr, body)?;
-                    return Ok(if_stmt)
+                    return Ok(if_stmt);
                 }
                 self.match_token(Tag::ELSE)?;
                 let false_stmt = self.stmt()?;
                 let else_stmt = StmtNode::box_else(expr, body, false_stmt)?;
                 Ok(else_stmt)
-            },
+            }
             WHILE => {
                 self.match_token(WHILE)?;
                 self.match_token(b'(')?;
@@ -240,7 +245,7 @@ impl<T: std::io::Read> Parser<T> {
                 Ok(break_stmt)
             }
             OPEN_BR => self.block(),
-            _ => self.assign()
+            _ => self.assign(),
         }
     }
 
@@ -307,8 +312,8 @@ impl<T: std::io::Read> Parser<T> {
                 let right = self.expr()?;
                 let rel = ExprNode::box_rel(token, expr, right)?;
                 Ok(rel)
-            },
-            _ => Ok(expr)
+            }
+            _ => Ok(expr),
         }
     }
 
@@ -350,7 +355,7 @@ impl<T: std::io::Read> Parser<T> {
                 expr = ExprNode::box_not(token, expr)?;
                 Ok(expr)
             }
-            _ => self.factor()
+            _ => self.factor(),
         }
     }
 
@@ -366,7 +371,7 @@ impl<T: std::io::Read> Parser<T> {
                 let expr = ExprNode::box_constant(self.look.to_owned())?;
                 self.next()?;
                 Ok(expr)
-            },
+            }
             TRUE => {
                 let expr = ExprNode::box_true();
                 self.next()?;
@@ -386,7 +391,7 @@ impl<T: std::io::Read> Parser<T> {
                 }
                 Ok(Box::new(id))
             }
-            _ => Err(String::from("Syntax Error"))
+            _ => Err(String::from("Syntax Error")),
         }
     }
 
@@ -398,8 +403,12 @@ impl<T: std::io::Read> Parser<T> {
         self.match_token(b']')?;
 
         match tp {
-            Type::Array{of, tag:_, length: _} => tp = *of,
-            _ => return Err(String::from("String error"))
+            Type::Array {
+                of,
+                tag: _,
+                length: _,
+            } => tp = *of,
+            _ => return Err(String::from("String error")),
         };
 
         let width = ExprNode::box_constant(Token::Num(tp.width() as i64))?;
@@ -410,15 +419,18 @@ impl<T: std::io::Read> Parser<T> {
             self.match_token(b'[')?;
             let index = self.boolean()?;
             self.match_token(b']')?;
-        
+
             match tp {
-                Type::Array{of, tag:_, length: _} => tp = *of,
-                _ => return Err(String::from("String error"))
-        
+                Type::Array {
+                    of,
+                    tag: _,
+                    length: _,
+                } => tp = *of,
+                _ => return Err(String::from("String error")),
             };
             let width = ExprNode::box_constant(Token::Num(tp.width() as i64))?;
             let t1 = ExprNode::box_arith(Token::Token(b'*'), index, width)?;
-            
+
             let t2 = ExprNode::box_arith(Token::Token(b'*'), loc, t1)?;
             loc = t2;
         }

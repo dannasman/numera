@@ -32,10 +32,7 @@ impl<T: std::io::Read> Lexer<T> {
                     String::from("while"),
                     Token::Word(String::from("while"), Tag::WHILE),
                 ),
-                (
-                    String::from("do"),
-                    Token::Word(String::from("do"), Tag::DO),
-                ),
+                (String::from("do"), Token::Word(String::from("do"), Tag::DO)),
             ]),
             reader: source,
         };

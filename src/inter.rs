@@ -263,7 +263,7 @@ impl ExprNode {
         match token {
             Token::Num(_) => Ok(ExprNode::Constant(token, Type::int())),
             Token::Real(_) => Ok(ExprNode::Constant(token, Type::float())),
-            t => Err(format!("Invalid parameter: {}", t))
+            t => Err(format!("Invalid parameter: {}", t)),
         }
     }
 
@@ -527,7 +527,7 @@ impl ExprNode {
         match self {
             ExprNode::Arith(_, tp, _, _)
             | ExprNode::Unary(_, tp, _)
-            | ExprNode::Access(_,  _, _, tp) => {
+            | ExprNode::Access(_, _, _, tp) => {
                 let x = self.gen(b)?;
                 let tmp = ExprNode::new_temp(tp);
                 emit(b, format!("{} = {}", tmp, x).as_str());
@@ -764,8 +764,7 @@ impl StmtNode {
             StmtNode::Seq(head, tail) => {
                 if head.is_null() {
                     tail.gen(b, begin, after)?;
-                }
-                else if tail.is_null() {
+                } else if tail.is_null() {
                     head.gen(b, begin, after)?;
                 } else {
                     let label = new_label();
