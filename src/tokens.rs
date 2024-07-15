@@ -44,7 +44,7 @@ pub enum Token {
     Word(String, Tag),
     Real(f64),
     BasicType(String, Tag, u8),
-    Array(Box<Token>, Tag, u32),
+    Array(Box<Token>, u32),
     Eof,
 }
 
@@ -116,12 +116,12 @@ impl Token {
             Token::Word(_, tag) => *tag as u32,
             Token::Real(_) => Tag::REAL as u32,
             Token::BasicType(_, tag, _) => *tag as u32,
-            Token::Array(_, tag, _) => *tag as u32,
+            Token::Array(_, _) => Tag::INDEX as u32,
             Token::Eof => Tag::EOF as u32,
         }
     }
 
-    pub fn matc_tag<T: Into<u32>>(&self, o: T) -> bool {
+    pub fn match_tag<T: Into<u32>>(&self, o: T) -> bool {
         self.tag() == o.into()
     }
 }
@@ -134,7 +134,7 @@ impl fmt::Display for Token {
             Token::Word(lexeme, _) => write!(f, "{}", lexeme),
             Token::Real(r) => write!(f, "{}", r),
             Token::BasicType(lexeme, _, _) => write!(f, "{}", lexeme),
-            Token::Array(tp, _, len) => write!(f, "[{}]{}", len, *tp),
+            Token::Array(tp, len) => write!(f, "[{}]{}", len, *tp),
             Token::Eof => write!(f, "\0"),
         }
     }
@@ -161,8 +161,8 @@ impl PartialEq for Token {
                 }
                 _ => false,
             },
-            Token::Array(tp1, tag1, len1) => match other {
-                Token::Array(tp2, tag2, len2) => tp1 == tp2 && tag1 == tag2 && len1 == len2,
+            Token::Array(tp1, len1) => match other {
+                Token::Array(tp2, len2) => tp1 == tp2 && len1 == len2,
                 _ => false,
             },
             _ => self.tag() == other.tag(),
