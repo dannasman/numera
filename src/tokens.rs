@@ -145,14 +145,14 @@ impl fmt::Display for Token {
             Token::BasicType(lexeme, _, _) => write!(f, "{}", lexeme),
             Token::Array(tp, len) => write!(f, "[{}]{}", len, *tp),
             Token::Function(return_tp, param_tps) => {
-                write!(f, "(");
-                param_tps.iter().enumerate().for_each(|(i, tp)| {
+                write!(f, "(")?;
+                for (i, tp) in param_tps.into_iter().enumerate() {
                     if i != 0 {
-                        write!(f, ", ");
+                        write!(f, ", ")?;
                     }
-                    write!(f, "{}", *tp);
-                });
-                write!(f, ")");
+                    write!(f, "{}", *tp)?;
+                }
+                write!(f, ")")?;
                 write!(f, " -> {}", *return_tp)
             }
             Token::Eof => write!(f, "\0"),

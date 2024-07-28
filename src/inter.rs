@@ -1,6 +1,6 @@
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::fmt;
+use std::rc::Rc;
 
 use super::tokens::{Tag, Token};
 
@@ -685,6 +685,8 @@ pub enum StmtNode {
     Do(Box<ExprNode>, Box<StmtNode>),
     Break(Rc<RefCell<i64>>),
     FuncDef(Box<ExprNode>, Box<StmtNode>),
+    FuncCall(Box<ExprNode>, Vec<Box<ExprNode>>),
+    Return(Option<Box<ExprNode>>),
 }
 
 impl StmtNode {
@@ -840,6 +842,47 @@ impl StmtNode {
         Ok(Box::new(fd))
     }
 
+    pub fn new_funccall(id: Box<ExprNode>, params: Vec<Box<ExprNode>>) -> Result<StmtNode, String> {
+        match id.tp() {
+            Type::Function {
+                return_tp: _,
+                param_tps,
+            } => {
+                let matching_tps = params
+                    .to_owned()
+                    .into_iter()
+                    .map(|p| p.tp().to_owned())
+                    .zip(param_tps.into_iter())
+                    .map(|(tp1, tp2)| match Type::max_type(&tp1, tp2) {
+                        Some(tp) => tp == *tp2,
+                        None => false,
+                    })
+                    .fold(true, |b, e| b && e);
+                if !matching_tps || param_tps.len() != params.len() {
+                    return Err(String::from("Type Error"));
+                }
+                Ok(StmtNode::FuncCall(id, params))
+            }
+            _ => Err(String::from("Type Error")),
+        }
+    }
+
+    pub fn box_funccall(
+        id: Box<ExprNode>,
+        params: Vec<Box<ExprNode>>,
+    ) -> Result<Box<StmtNode>, String> {
+        let funccall = StmtNode::new_funccall(id, params)?;
+        Ok(Box::new(funccall))
+    }
+
+    pub fn new_return(expr: Option<Box<ExprNode>>) -> StmtNode {
+        StmtNode::Return(expr)
+    }
+
+    pub fn box_return(expr: Option<Box<ExprNode>>) -> Box<StmtNode> {
+        Box::new(StmtNode::new_return(expr))
+    }
+
     pub fn gen(&self, b: &mut String, begin: i64, after: i64) -> Result<(), String> {
         match self {
             StmtNode::Set(id, expr) => {
@@ -903,9 +946,34 @@ impl StmtNode {
             }
             // TODO: returnin käsittely kuntoon
             StmtNode::FuncDef(id, body) => {
+                self.ret(id.tp())?;
                 emit_noindent(b, &format!("{}:", id));
+                emit(b, &format!("begin {}", id.tp().width()));
                 body.gen(b, begin, after)?;
+                emit(b, "end");
             }
+            StmtNode::FuncCall(id, params) => {
+                let mut count = 0;
+                let mut params_reduced = Vec::<Box<ExprNode>>::new();
+                for param in params.into_iter().rev() {
+                    let expr = param.reduce(b)?;
+                    params_reduced.push(expr);
+                    count += 1;
+                }
+                for param in params_reduced {
+                    emit(b, &format!("param {}", param));
+                }
+                emit(b, &format!("call {}, {}", id, count));
+            }
+            StmtNode::Return(expr) => match expr {
+                Some(e) => {
+                    let return_value = e.reduce(b)?;
+                    emit(b, &format!("return {}", return_value));
+                }
+                None => {
+                    emit(b, "return");
+                }
+            },
             _ => (),
         }
         Ok(())
@@ -926,6 +994,36 @@ impl StmtNode {
             }
             _ => (),
         }
+    }
+
+    fn ret(&self, tp: &Type) -> Result<(), String> {
+        match self {
+            StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
+                s1.ret(tp)?;
+                s2.ret(tp)?;
+            }
+            StmtNode::FuncDef(_, body)
+            | StmtNode::If(_, body)
+            | StmtNode::While(_, body)
+            | StmtNode::Do(_, body) => body.ret(tp)?,
+            StmtNode::Return(expr) => match expr {
+                Some(e) => match Type::max_type(tp, e.tp()) {
+                    Some(max_tp) => {
+                        if max_tp != *tp {
+                            return Err(String::from("Type error"));
+                        }
+                    }
+                    None => return Err(String::from("Type error")),
+                },
+                None => {
+                    if *tp != Type::void() {
+                        return Err(String::from("Type error"));
+                    }
+                }
+            },
+            _ => (),
+        }
+        Ok(())
     }
 
     fn is_null(&self) -> bool {

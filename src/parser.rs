@@ -96,7 +96,7 @@ impl<T: std::io::Read> Parser<T> {
     }
 
     pub fn program(&mut self, s: &mut String) -> Result<(), String> {
-        let mut stmt = self.block()?;
+        let stmt = self.block()?;
         let begin = new_label();
         let after = new_label();
         emit_label(s, begin);
