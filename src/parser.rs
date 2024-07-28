@@ -68,12 +68,10 @@ impl Env {
     fn get(&self, key: &str) -> Result<ExprNode, String> {
         if let Some(value) = self.table.get(key) {
             Ok(value.to_owned())
+        } else if let Some(env) = self.prev.as_ref() {
+            env.get(key)
         } else {
-            if let Some(env) = self.prev.as_ref() {
-                env.get(key)
-            } else {
-                Err(format!("Undeclared id {}", key))
-            }
+            Err(format!("Undeclared id {}", key))
         }
     }
 }

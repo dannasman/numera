@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::fmt;
 
 use super::tokens::{Tag, Token};
@@ -31,6 +32,10 @@ pub fn emit(s: &mut String, st: &str) {
     s.push_str(&format!("\t{}\n", st));
 }
 
+pub fn emit_noindent(s: &mut String, st: &str) {
+    s.push_str(&format!("{}\n", st));
+}
+
 pub fn emit_jumps(s: &mut String, test: &str, t: i64, f: i64) {
     if t != 0 && f != 0 {
         emit(s, &format!("if {} goto L{}", test, t));
@@ -54,21 +59,37 @@ pub enum Type {
         tag: Tag,
         length: u32,
     },
+    Function {
+        return_tp: Box<Type>,
+        param_tps: Vec<Type>,
+    },
 }
 
 impl Type {
     pub fn new(token: Token) -> Result<Type, String> {
-        if let Token::BasicType(lexeme, tag, width) = token {
-            Ok(Type::Basic { lexeme, tag, width })
-        } else if let Token::Array(of, length) = token {
-            let o = Type::new(*of)?;
-            Ok(Type::Array {
-                of: Box::new(o),
-                tag: Tag::INDEX,
-                length,
-            })
-        } else {
-            return Err(format!("Can not convert token {} to Type", token));
+        match token {
+            Token::BasicType(lexeme, tag, width) => Ok(Type::Basic { lexeme, tag, width }),
+            Token::Array(of, length) => {
+                let o = Type::new(*of)?;
+                Ok(Type::Array {
+                    of: Box::new(o),
+                    tag: Tag::INDEX,
+                    length,
+                })
+            }
+            Token::Function(return_tp, param_tps) => {
+                let r = Type::new(*return_tp)?;
+                let mut p = Vec::new();
+                for tok in param_tps {
+                    let tp = Type::new(tok)?;
+                    p.push(tp);
+                }
+                Ok(Type::Function {
+                    return_tp: Box::new(r),
+                    param_tps: p,
+                })
+            }
+            _ => Err(format!("Can not convert token {} to Type", token)),
         }
     }
 
@@ -96,10 +117,21 @@ impl Type {
         Type::new(Token::bool()).unwrap()
     }
 
+    pub fn void() -> Type {
+        Type::new(Token::void()).unwrap()
+    }
+
     pub fn token(&self) -> Token {
         match &self {
             Type::Basic { lexeme, tag, width } => Token::BasicType(lexeme.to_owned(), *tag, *width),
             Type::Array { of, tag: _, length } => Token::Array(Box::new(of.token()), *length),
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => Token::Function(
+                Box::new(return_tp.token()),
+                param_tps.into_iter().map(|tp| tp.token()).collect(),
+            ),
         }
     }
 
@@ -115,6 +147,10 @@ impl Type {
                 tag,
                 length: _,
             } => *tag,
+            Type::Function {
+                return_tp: _,
+                param_tps: _,
+            } => Tag::FUNCTION,
         }
     }
 
@@ -126,6 +162,17 @@ impl Type {
                 width,
             } => *width as u32,
             Type::Array { of, tag: _, length } => of.width() * length,
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => {
+                let mut width = return_tp.width();
+                width += param_tps
+                    .into_iter()
+                    .map(|tp| tp.width())
+                    .fold(0, |w, e| w + e);
+                width
+            }
         }
     }
 
@@ -140,6 +187,18 @@ impl Type {
                 "int" | "float" | "char" => true,
                 _ => false,
             }
+        } else {
+            false
+        }
+    }
+
+    pub fn is_function(&self) -> bool {
+        if let Type::Function {
+            return_tp: _,
+            param_tps: _,
+        } = self
+        {
+            true
         } else {
             false
         }
@@ -183,6 +242,24 @@ impl PartialEq for Type {
                     tag: tag2,
                     length: length2,
                 } => of1 == of2 && tag1 == tag2 && length1 == length2,
+                _ => false,
+            },
+            Type::Function {
+                return_tp: rtp1,
+                param_tps: ptps1,
+            } => match other {
+                Type::Function {
+                    return_tp: rtp2,
+                    param_tps: ptps2,
+                } => {
+                    rtp1 == rtp2
+                        && ptps1.len() == ptps2.len()
+                        && ptps1
+                            .into_iter()
+                            .zip(ptps2.into_iter())
+                            .map(|(tp1, tp2)| tp1 == tp2)
+                            .fold(true, |b, e| b && e)
+                }
                 _ => false,
             },
         }
@@ -606,7 +683,8 @@ pub enum StmtNode {
     Else(Box<ExprNode>, Box<StmtNode>, Box<StmtNode>),
     While(Box<ExprNode>, Box<StmtNode>),
     Do(Box<ExprNode>, Box<StmtNode>),
-    Break(i64),
+    Break(Rc<RefCell<i64>>),
+    FuncDef(Box<ExprNode>, Box<StmtNode>),
 }
 
 impl StmtNode {
@@ -743,14 +821,26 @@ impl StmtNode {
     }
 
     pub fn new_break() -> StmtNode {
-        StmtNode::Break(0)
+        StmtNode::Break(Rc::new(RefCell::new(0)))
     }
 
     pub fn box_break() -> Box<StmtNode> {
         Box::new(StmtNode::new_break())
     }
 
-    pub fn gen(&mut self, b: &mut String, begin: i64, after: i64) -> Result<(), String> {
+    pub fn new_funcdef(id: Box<ExprNode>, body: Box<StmtNode>) -> Result<StmtNode, String> {
+        if !id.is_id() && !id.tp().is_function() {
+            return Err(String::from("Type Error"));
+        }
+        Ok(StmtNode::FuncDef(id, body))
+    }
+
+    pub fn box_funcdef(id: Box<ExprNode>, body: Box<StmtNode>) -> Result<Box<StmtNode>, String> {
+        let fd = StmtNode::new_funcdef(id, body)?;
+        Ok(Box::new(fd))
+    }
+
+    pub fn gen(&self, b: &mut String, begin: i64, after: i64) -> Result<(), String> {
         match self {
             StmtNode::Set(id, expr) => {
                 let e = expr.gen(b)?;
@@ -790,32 +880,38 @@ impl StmtNode {
                 false_stmt.gen(b, label_else, after)?;
             }
             StmtNode::While(cond, body) => {
+                self.after(after);
                 cond.jumping(b, 0, after)?;
                 let label = new_label();
                 emit_label(b, label);
                 body.gen(b, label, begin)?;
                 emit(b, &format!("goto L{}", begin));
-                self.after(after);
             }
             StmtNode::Do(cond, body) => {
+                self.after(after);
                 let label = new_label();
                 body.gen(b, begin, label)?;
                 emit_label(b, label);
                 cond.jumping(b, begin, 0)?;
-                self.after(after);
             }
             StmtNode::Break(after) => {
-                if *after == 0 {
+                let a = after.borrow();
+                if *a == 0 {
                     return Err(String::from("Unenclosed break"));
                 }
-                emit(b, &format!("goto L{}", after));
+                emit(b, &format!("goto L{}", *a));
+            }
+            // TODO: returnin käsittely kuntoon
+            StmtNode::FuncDef(id, body) => {
+                emit_noindent(b, &format!("{}:", id));
+                body.gen(b, begin, after)?;
             }
             _ => (),
         }
         Ok(())
     }
 
-    fn after(&mut self, label: i64) {
+    fn after(&self, label: i64) {
         match self {
             StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
                 s1.after(label);
@@ -825,7 +921,8 @@ impl StmtNode {
                 body.after(label);
             }
             StmtNode::Break(after) => {
-                *after = label;
+                let mut a = after.borrow_mut();
+                *a = label;
             }
             _ => (),
         }

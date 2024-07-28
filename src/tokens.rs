@@ -22,6 +22,9 @@ pub enum Tag {
     TEMP,
     TRUE,
     WHILE,
+    DEFINE,
+    RETURN,
+    FUNCTION,
     EOF = std::u32::MAX as isize,
 }
 
@@ -45,6 +48,7 @@ pub enum Token {
     Real(f64),
     BasicType(String, Tag, u8),
     Array(Box<Token>, u32),
+    Function(Box<Token>, Vec<Token>),
     Eof,
 }
 
@@ -105,6 +109,10 @@ impl Token {
         Token::BasicType(String::from("float"), Tag::BASIC, 8u8)
     }
 
+    pub fn void() -> Token {
+        Token::BasicType(String::from("void"), Tag::BASIC, 0u8)
+    }
+
     pub fn access() -> Token {
         Token::Word(String::from("[]"), Tag::INDEX)
     }
@@ -117,6 +125,7 @@ impl Token {
             Token::Real(_) => Tag::REAL as u32,
             Token::BasicType(_, tag, _) => *tag as u32,
             Token::Array(_, _) => Tag::INDEX as u32,
+            Token::Function(_, _) => Tag::FUNCTION as u32,
             Token::Eof => Tag::EOF as u32,
         }
     }
@@ -135,6 +144,17 @@ impl fmt::Display for Token {
             Token::Real(r) => write!(f, "{}", r),
             Token::BasicType(lexeme, _, _) => write!(f, "{}", lexeme),
             Token::Array(tp, len) => write!(f, "[{}]{}", len, *tp),
+            Token::Function(return_tp, param_tps) => {
+                write!(f, "(");
+                param_tps.iter().enumerate().for_each(|(i, tp)| {
+                    if i != 0 {
+                        write!(f, ", ");
+                    }
+                    write!(f, "{}", *tp);
+                });
+                write!(f, ")");
+                write!(f, " -> {}", *return_tp)
+            }
             Token::Eof => write!(f, "\0"),
         }
     }
@@ -152,7 +172,7 @@ impl PartialEq for Token {
                 _ => false,
             },
             Token::Real(_) => match other {
-                Token::Real(__) => self.to_string() == other.to_string(),
+                Token::Real(_) => self.to_string() == other.to_string(),
                 _ => false,
             },
             Token::BasicType(lexeme1, tag1, w1) => match other {

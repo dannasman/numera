@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::io::{BufReader, ErrorKind, Read, Result};
 
 use super::tokens::{Tag, Token};
@@ -33,6 +32,18 @@ impl<T: std::io::Read> Lexer<T> {
                     Token::Word(String::from("while"), Tag::WHILE),
                 ),
                 (String::from("do"), Token::Word(String::from("do"), Tag::DO)),
+                (
+                    String::from("define"),
+                    Token::Word(String::from("define"), Tag::DEFINE),
+                ),
+                (
+                    String::from("break"),
+                    Token::Word(String::from("break"), Tag::BREAK),
+                ),
+                (
+                    String::from("return"),
+                    Token::Word(String::from("return"), Tag::RETURN),
+                ),
             ]),
             reader: source,
         };
