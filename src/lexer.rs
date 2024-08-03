@@ -22,6 +22,7 @@ impl<T: std::io::Read> Lexer<T> {
                 (String::from("float"), Token::float()),
                 (String::from("char"), Token::char()),
                 (String::from("bool"), Token::bool()),
+                (String::from("void"), Token::void()),
                 (String::from("if"), Token::Word(String::from("if"), Tag::IF)),
                 (
                     String::from("else"),

@@ -24,6 +24,11 @@ const REAL: u32 = Tag::REAL as u32;
 const TRUE: u32 = Tag::TRUE as u32;
 const FALSE: u32 = Tag::FALSE as u32;
 const ID: u32 = Tag::ID as u32;
+const DEFINE: u32 = Tag::DEFINE as u32;
+const FUNCTION: u32 = Tag::FUNCTION as u32;
+const RETURN: u32 = Tag::RETURN as u32;
+const VOID: u32 = Tag::VOID as u32;
+const BASIC: u32 = Tag::BASIC as u32;
 
 pub struct Env {
     table: HashMap<String, ExprNode>,
@@ -80,6 +85,7 @@ pub struct Parser<T: std::io::Read> {
     lex: Lexer<T>,
     look: Token,
     top: Box<Env>,
+    functions: Vec<StmtNode>,
     used: i64,
 }
 
@@ -89,6 +95,7 @@ impl<T: std::io::Read> Parser<T> {
             lex,
             look: Token::Eof,
             top: Env::empty(),
+            functions: Vec::new(),
             used: 0,
         };
         res.next()?;
@@ -96,12 +103,18 @@ impl<T: std::io::Read> Parser<T> {
     }
 
     pub fn program(&mut self, s: &mut String) -> Result<(), String> {
-        let stmt = self.block()?;
+        self.function()?;
+        for function in &self.functions {
+            let begin = new_label();
+            let after = new_label();
+            function.gen(s, begin, after)?;
+        }
+        /*let stmt = self.block()?;
         let begin = new_label();
         let after = new_label();
         emit_label(s, begin);
         stmt.gen(s, begin, after)?;
-        emit_label(s, after);
+        emit_label(s, after);*/
         Ok(())
     }
 
@@ -121,6 +134,47 @@ impl<T: std::io::Read> Parser<T> {
             ));
         }
         self.next()
+    }
+
+    fn function(&mut self) -> Result<(), String> {
+        while self.look.match_tag(Tag::DEFINE) {
+            self.match_token(Tag::DEFINE)?;
+            let tp = match self.look.tag() {
+                BASIC => self.tp()?,
+                VOID => {
+                    self.next()?;
+                    Type::new(self.look.to_owned())?
+                }
+                _ => return Err(format!("Syntax error near line {}", self.lex.line)),
+            };
+            let id_token = self.look.to_owned();
+            self.match_token(Tag::ID)?;
+            self.match_token(b'(')?;
+            let mut params = Vec::<ExprNode>::new();
+            let mut param_tps = Vec::<Type>::new();
+            while self.look.match_tag(Tag::BASIC) {
+                let tp = self.tp()?;
+                param_tps.push(tp.to_owned());
+                let param_token = self.look.to_owned();
+                self.match_token(Tag::ID)?;
+                let id = ExprNode::new_id(param_token, &tp, self.used as i32);
+                params.push(id.to_owned());
+                self.top.put(&id.to_string(), id)?;
+                self.used += tp.width() as i64;
+                if self.look.match_tag(b',') {
+                    self.next()?;
+                }
+            }
+            self.match_token(b')')?;
+            let func_tp = Type::function(Box::new(tp), param_tps);
+            let func_id = ExprNode::new_id(id_token, &func_tp, self.used as i32);
+            self.top.put(&func_id.to_string(), func_id.to_owned())?;
+            let stmt = self.block()?;
+            let func_stmt = StmtNode::FuncDef(Box::new(func_id), stmt, self.used as i32);
+            self.functions.push(func_stmt);
+            self.used = 0;
+        }
+        Ok(())
     }
 
     fn block(&mut self) -> Result<Box<StmtNode>, String> {
@@ -241,6 +295,18 @@ impl<T: std::io::Read> Parser<T> {
                 self.match_token(b';')?;
                 let break_stmt = StmtNode::box_break();
                 Ok(break_stmt)
+            }
+            RETURN => {
+                self.match_token(RETURN)?;
+                let reuturn_stmt = match self.look.tag() {
+                    SEMICOLON => StmtNode::box_return(None),
+                    _ => {
+                        let expr = self.boolean()?;
+                        StmtNode::box_return(Some(expr))
+                    }
+                };
+                self.next()?;
+                Ok(reuturn_stmt)
             }
             OPEN_BR => self.block(),
             _ => self.assign(),

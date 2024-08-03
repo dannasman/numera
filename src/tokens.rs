@@ -25,6 +25,7 @@ pub enum Tag {
     DEFINE,
     RETURN,
     FUNCTION,
+    VOID,
     EOF = std::u32::MAX as isize,
 }
 
@@ -49,6 +50,7 @@ pub enum Token {
     BasicType(String, Tag, u8),
     Array(Box<Token>, u32),
     Function(Box<Token>, Vec<Token>),
+    Void,
     Eof,
 }
 
@@ -110,7 +112,7 @@ impl Token {
     }
 
     pub fn void() -> Token {
-        Token::BasicType(String::from("void"), Tag::BASIC, 0u8)
+        Token::Void
     }
 
     pub fn access() -> Token {
@@ -126,6 +128,7 @@ impl Token {
             Token::BasicType(_, tag, _) => *tag as u32,
             Token::Array(_, _) => Tag::INDEX as u32,
             Token::Function(_, _) => Tag::FUNCTION as u32,
+            Token::Void => Tag::VOID as u32,
             Token::Eof => Tag::EOF as u32,
         }
     }
@@ -155,6 +158,7 @@ impl fmt::Display for Token {
                 write!(f, ")")?;
                 write!(f, " -> {}", *return_tp)
             }
+            Token::Void => write!(f, "void"),
             Token::Eof => write!(f, "\0"),
         }
     }

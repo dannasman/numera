@@ -63,6 +63,7 @@ pub enum Type {
         return_tp: Box<Type>,
         param_tps: Vec<Type>,
     },
+    Void,
 }
 
 impl Type {
@@ -89,7 +90,15 @@ impl Type {
                     param_tps: p,
                 })
             }
+            Token::Void => Ok(Type::Void),
             _ => Err(format!("Can not convert token {} to Type", token)),
+        }
+    }
+
+    pub fn function(return_tp: Box<Type>, param_tps: Vec<Type>) -> Type {
+        Type::Function {
+            return_tp,
+            param_tps,
         }
     }
 
@@ -132,6 +141,7 @@ impl Type {
                 Box::new(return_tp.token()),
                 param_tps.into_iter().map(|tp| tp.token()).collect(),
             ),
+            Type::Void => Token::Void,
         }
     }
 
@@ -151,6 +161,7 @@ impl Type {
                 return_tp: _,
                 param_tps: _,
             } => Tag::FUNCTION,
+            Type::Void => Tag::VOID,
         }
     }
 
@@ -163,16 +174,21 @@ impl Type {
             } => *width as u32,
             Type::Array { of, tag: _, length } => of.width() * length,
             Type::Function {
-                return_tp,
+                return_tp: _,
                 param_tps,
             } => {
-                let mut width = return_tp.width();
+                /*let mut width = return_tp.width();
                 width += param_tps
                     .into_iter()
                     .map(|tp| tp.width())
                     .fold(0, |w, e| w + e);
-                width
+                width*/
+                param_tps
+                    .into_iter()
+                    .map(|tp| tp.width())
+                    .fold(0, |w, e| w + e)
             }
+            Type::Void => 0,
         }
     }
 
@@ -262,6 +278,10 @@ impl PartialEq for Type {
                 }
                 _ => false,
             },
+            Type::Void => match other {
+                Type::Void => true,
+                _ => false,
+            },
         }
     }
 }
@@ -309,6 +329,20 @@ impl ExprNode {
             ExprNode::Not(_, tp, _) => tp,
             ExprNode::Or(_, tp, _, _) => tp,
             ExprNode::And(_, tp, _, _) => tp,
+        }
+    }
+
+    pub fn return_tp(&self) -> Result<Type, String> {
+        match self {
+            ExprNode::Id(_, tp, _) => {
+                match tp {
+                    Type::Function { return_tp, param_tps:_ } => {
+                        Ok(*return_tp.to_owned())
+                    }
+                    _ => return Err(String::from("Type of id not Function"))
+                }
+            },
+            _ => return Err(String::from("Not an Id expression"))
         }
     }
 
@@ -684,7 +718,7 @@ pub enum StmtNode {
     While(Box<ExprNode>, Box<StmtNode>),
     Do(Box<ExprNode>, Box<StmtNode>),
     Break(Rc<RefCell<i64>>),
-    FuncDef(Box<ExprNode>, Box<StmtNode>),
+    FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
     FuncCall(Box<ExprNode>, Vec<Box<ExprNode>>),
     Return(Option<Box<ExprNode>>),
 }
@@ -830,15 +864,15 @@ impl StmtNode {
         Box::new(StmtNode::new_break())
     }
 
-    pub fn new_funcdef(id: Box<ExprNode>, body: Box<StmtNode>) -> Result<StmtNode, String> {
+    pub fn new_funcdef(id: Box<ExprNode>, body: Box<StmtNode>, used: i32) -> Result<StmtNode, String> {
         if !id.is_id() && !id.tp().is_function() {
             return Err(String::from("Type Error"));
         }
-        Ok(StmtNode::FuncDef(id, body))
+        Ok(StmtNode::FuncDef(id, body, used))
     }
 
-    pub fn box_funcdef(id: Box<ExprNode>, body: Box<StmtNode>) -> Result<Box<StmtNode>, String> {
-        let fd = StmtNode::new_funcdef(id, body)?;
+    pub fn box_funcdef(id: Box<ExprNode>, body: Box<StmtNode>, used: i32) -> Result<Box<StmtNode>, String> {
+        let fd = StmtNode::new_funcdef(id, body, used)?;
         Ok(Box::new(fd))
     }
 
@@ -945,11 +979,14 @@ impl StmtNode {
                 emit(b, &format!("goto L{}", *a));
             }
             // TODO: returnin käsittely kuntoon
-            StmtNode::FuncDef(id, body) => {
-                self.ret(id.tp())?;
+            StmtNode::FuncDef(id, body, used) => {
+                let ret_tp = id.return_tp()?;
+                self.ret(&ret_tp)?;
                 emit_noindent(b, &format!("{}:", id));
-                emit(b, &format!("begin {}", id.tp().width()));
+                emit(b, &format!("begin {}", used));
+                emit_label(b, begin);
                 body.gen(b, begin, after)?;
+                emit_label(b, after);
                 emit(b, "end");
             }
             StmtNode::FuncCall(id, params) => {
@@ -1002,7 +1039,7 @@ impl StmtNode {
                 s1.ret(tp)?;
                 s2.ret(tp)?;
             }
-            StmtNode::FuncDef(_, body)
+            StmtNode::FuncDef(_, body, _)
             | StmtNode::If(_, body)
             | StmtNode::While(_, body)
             | StmtNode::Do(_, body) => body.ret(tp)?,
@@ -1013,7 +1050,11 @@ impl StmtNode {
                             return Err(String::from("Type error"));
                         }
                     }
-                    None => return Err(String::from("Type error")),
+                    None => {
+                        if tp != e.tp() {
+                            return Err(String::from("Type error"));
+                        }
+                    }
                 },
                 None => {
                     if *tp != Type::void() {
