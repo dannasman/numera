@@ -299,6 +299,7 @@ pub enum ExprNode {
     Not(Token, Type, Box<ExprNode>),
     Or(Token, Type, Box<ExprNode>, Box<ExprNode>),
     And(Token, Type, Box<ExprNode>, Box<ExprNode>),
+    FuncCall(Token, Type, Vec<Box<ExprNode>>)
 }
 
 impl ExprNode {
@@ -314,6 +315,7 @@ impl ExprNode {
             ExprNode::Not(op, _, _) => op,
             ExprNode::Or(op, _, _, _) => op,
             ExprNode::And(op, _, _, _) => op,
+            ExprNode::FuncCall(op, _, _) => op,
         }
     }
 
@@ -329,6 +331,7 @@ impl ExprNode {
             ExprNode::Not(_, tp, _) => tp,
             ExprNode::Or(_, tp, _, _) => tp,
             ExprNode::And(_, tp, _, _) => tp,
+            ExprNode::FuncCall(_, tp, _) => tp,
         }
     }
 
@@ -553,6 +556,42 @@ impl ExprNode {
         Ok(Box::new(and))
     }
 
+
+    pub fn new_funccall(id: Token, tp: &Type, params: Vec<Box<ExprNode>>) -> Result<ExprNode, String> {
+        match tp {
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => {
+                let matching_tps = params
+                    .to_owned()
+                    .into_iter()
+                    .map(|p| p.tp().to_owned())
+                    .zip(param_tps.into_iter())
+                    .map(|(tp1, tp2)| match Type::max_type(&tp1, tp2) {
+                        Some(tp) => tp == *tp2,
+                        None => false,
+                    })
+                    .fold(true, |b, e| b && e);
+                if !matching_tps || param_tps.len() != params.len() {
+                    return Err(String::from("Type Error"));
+                }
+                let funccall_tp = *return_tp.to_owned();
+                Ok(ExprNode::FuncCall(id, funccall_tp, params))
+            }
+            _ => Err(String::from("Type Error")),
+        }
+    }
+
+    pub fn box_funccall(
+        id: Token,
+        tp: &Type,
+        params: Vec<Box<ExprNode>>,
+    ) -> Result<Box<ExprNode>, String> {
+        let funccall = ExprNode::new_funccall(id, tp, params)?;
+        Ok(Box::new(funccall))
+    }
+
     pub fn jumping(&self, b: &mut String, t: i64, f: i64) -> Result<(), String> {
         match self {
             ExprNode::Rel(op, _, left, right) => {
@@ -630,6 +669,9 @@ impl ExprNode {
                 emit_label(b, a);
                 Ok(Box::new(tmp))
             }
+            ExprNode::FuncCall(_, _, _) => {
+                self.reduce(b)
+            }
             _ => Ok(self.box_clone()),
         }
     }
@@ -642,6 +684,21 @@ impl ExprNode {
                 let x = self.gen(b)?;
                 let tmp = ExprNode::new_temp(tp);
                 emit(b, format!("{} = {}", tmp, x).as_str());
+                Ok(Box::new(tmp))
+            }
+            ExprNode::FuncCall(id, tp, params) => {
+                let mut count = 0;
+                let mut params_reduced = Vec::<Box<ExprNode>>::new();
+                for param in params.into_iter().rev() {
+                    let expr = param.reduce(b)?;
+                    params_reduced.push(expr);
+                    count += 1;
+                }
+                for param in params_reduced {
+                    emit(b, &format!("param {}", param));
+                }
+                let tmp = ExprNode::new_temp(tp);
+                emit(b, &format!("{} = call {}, {}", tmp, id, count));
                 Ok(Box::new(tmp))
             }
             _ => Ok(self.box_clone()),
@@ -687,6 +744,7 @@ impl Clone for ExprNode {
                 left.box_clone(),
                 right.box_clone(),
             ),
+            ExprNode::FuncCall(id, tp, params) => ExprNode::FuncCall(id.clone(), tp.clone(), params.clone())
         }
     }
 }
@@ -704,6 +762,7 @@ impl fmt::Display for ExprNode {
             ExprNode::Not(op, _, expr) => write!(f, "{} {}", op, expr),
             ExprNode::Or(op, _, left, right) => write!(f, "{} {} {}", left, op, right),
             ExprNode::And(op, _, left, right) => write!(f, "{}, {}, {}", left, op, right),
+            _ => write!(f, ""),
         }
     }
 }
@@ -719,7 +778,6 @@ pub enum StmtNode {
     Do(Box<ExprNode>, Box<StmtNode>),
     Break(Rc<RefCell<i64>>),
     FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
-    FuncCall(Box<ExprNode>, Vec<Box<ExprNode>>),
     Return(Option<Box<ExprNode>>),
 }
 
@@ -876,39 +934,6 @@ impl StmtNode {
         Ok(Box::new(fd))
     }
 
-    pub fn new_funccall(id: Box<ExprNode>, params: Vec<Box<ExprNode>>) -> Result<StmtNode, String> {
-        match id.tp() {
-            Type::Function {
-                return_tp: _,
-                param_tps,
-            } => {
-                let matching_tps = params
-                    .to_owned()
-                    .into_iter()
-                    .map(|p| p.tp().to_owned())
-                    .zip(param_tps.into_iter())
-                    .map(|(tp1, tp2)| match Type::max_type(&tp1, tp2) {
-                        Some(tp) => tp == *tp2,
-                        None => false,
-                    })
-                    .fold(true, |b, e| b && e);
-                if !matching_tps || param_tps.len() != params.len() {
-                    return Err(String::from("Type Error"));
-                }
-                Ok(StmtNode::FuncCall(id, params))
-            }
-            _ => Err(String::from("Type Error")),
-        }
-    }
-
-    pub fn box_funccall(
-        id: Box<ExprNode>,
-        params: Vec<Box<ExprNode>>,
-    ) -> Result<Box<StmtNode>, String> {
-        let funccall = StmtNode::new_funccall(id, params)?;
-        Ok(Box::new(funccall))
-    }
-
     pub fn new_return(expr: Option<Box<ExprNode>>) -> StmtNode {
         StmtNode::Return(expr)
     }
@@ -989,19 +1014,6 @@ impl StmtNode {
                 emit_label(b, after);
                 emit(b, "end");
             }
-            StmtNode::FuncCall(id, params) => {
-                let mut count = 0;
-                let mut params_reduced = Vec::<Box<ExprNode>>::new();
-                for param in params.into_iter().rev() {
-                    let expr = param.reduce(b)?;
-                    params_reduced.push(expr);
-                    count += 1;
-                }
-                for param in params_reduced {
-                    emit(b, &format!("param {}", param));
-                }
-                emit(b, &format!("call {}, {}", id, count));
-            }
             StmtNode::Return(expr) => match expr {
                 Some(e) => {
                     let return_value = e.reduce(b)?;
@@ -1050,11 +1062,7 @@ impl StmtNode {
                             return Err(String::from("Type error"));
                         }
                     }
-                    None => {
-                        if tp != e.tp() {
-                            return Err(String::from("Type error"));
-                        }
-                    }
+                    None => return Err(String::from("Type error"))
                 },
                 None => {
                     if *tp != Type::void() {
