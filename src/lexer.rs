@@ -152,9 +152,6 @@ impl<T: std::io::Read> Lexer<T> {
                     },
                 }
             }
-            b'-' => {
-                return Ok(Token::minus());
-            }
             _ => (),
         }
 

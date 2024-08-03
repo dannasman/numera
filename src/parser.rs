@@ -28,6 +28,7 @@ const DEFINE: u32 = Tag::DEFINE as u32;
 const RETURN: u32 = Tag::RETURN as u32;
 const VOID: u32 = Tag::VOID as u32;
 const BASIC: u32 = Tag::BASIC as u32;
+const COLON: u32 = b',' as u32;
 
 pub struct Env {
     table: HashMap<String, ExprNode>,
@@ -141,8 +142,9 @@ impl<T: std::io::Read> Parser<T> {
             let tp = match self.look.tag() {
                 BASIC => self.tp()?,
                 VOID => {
+                    let tp = Type::new(self.look.to_owned())?;
                     self.next()?;
-                    Type::new(self.look.to_owned())?
+                    tp
                 }
                 _ => return Err(format!("Syntax error near line {}", self.lex.line)),
             };
@@ -304,7 +306,7 @@ impl<T: std::io::Read> Parser<T> {
                         StmtNode::box_return(Some(expr))
                     }
                 };
-                self.next()?;
+                self.match_token(b';')?;
                 Ok(reuturn_stmt)
             }
             OPEN_BR => self.block(),
@@ -451,10 +453,25 @@ impl<T: std::io::Read> Parser<T> {
                 if self.look.match_tag(b'[') {
                     let expr = self.offset(id)?;
                     return Ok(expr);
+                } else if self.look.match_tag(b'(') {
+                    let mut params = Vec::<Box<ExprNode>>::new();
+                    self.match_token(b'(')?;
+                    let tok = id.op().to_owned();
+                    let tp = id.tp().to_owned();
+                    while !self.look.match_tag(b')') {
+                        let expr = self.boolean()?;
+                        params.push(expr);
+                        if self.look.match_tag(b',') {
+                            self.match_token(b',')?;
+                        }
+                    }
+                    self.match_token(b')')?;
+                    let funccall = ExprNode::box_funccall(tok, &tp, params)?;
+                    return Ok(funccall)
                 }
                 Ok(Box::new(id))
             }
-            _ => Err(String::from("Syntax Error")),
+            _ => Err(format!("Syntax Error near line {}", self.lex.line)),
         }
     }
 
