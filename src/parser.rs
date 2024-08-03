@@ -25,7 +25,6 @@ const TRUE: u32 = Tag::TRUE as u32;
 const FALSE: u32 = Tag::FALSE as u32;
 const ID: u32 = Tag::ID as u32;
 const DEFINE: u32 = Tag::DEFINE as u32;
-const FUNCTION: u32 = Tag::FUNCTION as u32;
 const RETURN: u32 = Tag::RETURN as u32;
 const VOID: u32 = Tag::VOID as u32;
 const BASIC: u32 = Tag::BASIC as u32;
@@ -137,8 +136,8 @@ impl<T: std::io::Read> Parser<T> {
     }
 
     fn function(&mut self) -> Result<(), String> {
-        while self.look.match_tag(Tag::DEFINE) {
-            self.match_token(Tag::DEFINE)?;
+        while self.look.match_tag(DEFINE) {
+            self.match_token(DEFINE)?;
             let tp = match self.look.tag() {
                 BASIC => self.tp()?,
                 VOID => {
