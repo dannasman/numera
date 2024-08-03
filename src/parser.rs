@@ -28,7 +28,6 @@ const DEFINE: u32 = Tag::DEFINE as u32;
 const RETURN: u32 = Tag::RETURN as u32;
 const VOID: u32 = Tag::VOID as u32;
 const BASIC: u32 = Tag::BASIC as u32;
-const COLON: u32 = b',' as u32;
 
 pub struct Env {
     table: HashMap<String, ExprNode>,
@@ -454,25 +453,29 @@ impl<T: std::io::Read> Parser<T> {
                     let expr = self.offset(id)?;
                     return Ok(expr);
                 } else if self.look.match_tag(b'(') {
-                    let mut params = Vec::<Box<ExprNode>>::new();
-                    self.match_token(b'(')?;
                     let tok = id.op().to_owned();
                     let tp = id.tp().to_owned();
-                    while !self.look.match_tag(b')') {
-                        let expr = self.boolean()?;
-                        params.push(expr);
-                        if self.look.match_tag(b',') {
-                            self.match_token(b',')?;
-                        }
-                    }
-                    self.match_token(b')')?;
-                    let funccall = ExprNode::box_funccall(tok, &tp, params)?;
+                    let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
                     return Ok(funccall)
                 }
                 Ok(Box::new(id))
             }
             _ => Err(format!("Syntax Error near line {}", self.lex.line)),
         }
+    }
+
+    fn args(&mut self) -> Result<Vec<Box<ExprNode>>, String> {
+        let mut params = Vec::<Box<ExprNode>>::new();
+        self.match_token(b'(')?;
+        while !self.look.match_tag(b')') {
+            let expr = self.boolean()?;
+            params.push(expr);
+            if self.look.match_tag(b',') {
+                self.match_token(b',')?;
+            }
+        }
+        self.match_token(b')')?;
+        Ok(params)
     }
 
     fn offset(&mut self, id: ExprNode) -> Result<Box<ExprNode>, String> {
