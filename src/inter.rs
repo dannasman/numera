@@ -299,7 +299,7 @@ pub enum ExprNode {
     Not(Token, Type, Box<ExprNode>),
     Or(Token, Type, Box<ExprNode>, Box<ExprNode>),
     And(Token, Type, Box<ExprNode>, Box<ExprNode>),
-    FuncCall(Token, Type, Vec<Box<ExprNode>>)
+    FuncCall(Token, Type, Vec<Box<ExprNode>>),
 }
 
 impl ExprNode {
@@ -337,15 +337,14 @@ impl ExprNode {
 
     pub fn return_tp(&self) -> Result<Type, String> {
         match self {
-            ExprNode::Id(_, tp, _) => {
-                match tp {
-                    Type::Function { return_tp, param_tps:_ } => {
-                        Ok(*return_tp.to_owned())
-                    }
-                    _ => return Err(String::from("Type of id not Function"))
-                }
+            ExprNode::Id(_, tp, _) => match tp {
+                Type::Function {
+                    return_tp,
+                    param_tps: _,
+                } => Ok(*return_tp.to_owned()),
+                _ => return Err(String::from("Type of id not Function")),
             },
-            _ => return Err(String::from("Not an Id expression"))
+            _ => return Err(String::from("Not an Id expression")),
         }
     }
 
@@ -556,8 +555,11 @@ impl ExprNode {
         Ok(Box::new(and))
     }
 
-
-    pub fn new_funccall(id: Token, tp: &Type, params: Vec<Box<ExprNode>>) -> Result<ExprNode, String> {
+    pub fn new_funccall(
+        id: Token,
+        tp: &Type,
+        params: Vec<Box<ExprNode>>,
+    ) -> Result<ExprNode, String> {
         match tp {
             Type::Function {
                 return_tp,
@@ -590,6 +592,28 @@ impl ExprNode {
     ) -> Result<Box<ExprNode>, String> {
         let funccall = ExprNode::new_funccall(id, tp, params)?;
         Ok(Box::new(funccall))
+    }
+
+    pub fn void_funccall(&self, b: &mut String) -> Result<(), String> {
+        if let ExprNode::FuncCall(id, tp, params) = self {
+            if *tp != Type::Void {
+                return Err(String::from("Type Error"));
+            }
+            let mut count = 0;
+            let mut params_reduced = Vec::<Box<ExprNode>>::new();
+            for param in params.into_iter().rev() {
+                let expr = param.reduce(b)?;
+                params_reduced.push(expr);
+                count += 1;
+            }
+            for param in params_reduced {
+                emit(b, &format!("param {}", param));
+            }
+            emit(b, &format!("call {}, {}", id, count));
+            Ok(())
+        } else {
+            Err(String::from("Expression is not a function call"))
+        }
     }
 
     pub fn jumping(&self, b: &mut String, t: i64, f: i64) -> Result<(), String> {
@@ -669,9 +693,7 @@ impl ExprNode {
                 emit_label(b, a);
                 Ok(Box::new(tmp))
             }
-            ExprNode::FuncCall(_, _, _) => {
-                self.reduce(b)
-            }
+            ExprNode::FuncCall(_, _, _) => self.reduce(b),
             _ => Ok(self.box_clone()),
         }
     }
@@ -744,7 +766,9 @@ impl Clone for ExprNode {
                 left.box_clone(),
                 right.box_clone(),
             ),
-            ExprNode::FuncCall(id, tp, params) => ExprNode::FuncCall(id.clone(), tp.clone(), params.clone())
+            ExprNode::FuncCall(id, tp, params) => {
+                ExprNode::FuncCall(id.clone(), tp.clone(), params.clone())
+            }
         }
     }
 }
@@ -779,6 +803,7 @@ pub enum StmtNode {
     Break(Rc<RefCell<i64>>),
     FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
     Return(Option<Box<ExprNode>>),
+    FuncCall(Box<ExprNode>),
 }
 
 impl StmtNode {
@@ -922,14 +947,22 @@ impl StmtNode {
         Box::new(StmtNode::new_break())
     }
 
-    pub fn new_funcdef(id: Box<ExprNode>, body: Box<StmtNode>, used: i32) -> Result<StmtNode, String> {
+    pub fn new_funcdef(
+        id: Box<ExprNode>,
+        body: Box<StmtNode>,
+        used: i32,
+    ) -> Result<StmtNode, String> {
         if !id.is_id() && !id.tp().is_function() {
             return Err(String::from("Type Error"));
         }
         Ok(StmtNode::FuncDef(id, body, used))
     }
 
-    pub fn box_funcdef(id: Box<ExprNode>, body: Box<StmtNode>, used: i32) -> Result<Box<StmtNode>, String> {
+    pub fn box_funcdef(
+        id: Box<ExprNode>,
+        body: Box<StmtNode>,
+        used: i32,
+    ) -> Result<Box<StmtNode>, String> {
         let fd = StmtNode::new_funcdef(id, body, used)?;
         Ok(Box::new(fd))
     }
@@ -940,6 +973,18 @@ impl StmtNode {
 
     pub fn box_return(expr: Option<Box<ExprNode>>) -> Box<StmtNode> {
         Box::new(StmtNode::new_return(expr))
+    }
+
+    pub fn new_funccall(expr: Box<ExprNode>) -> Result<StmtNode, String> {
+        match *expr {
+            ExprNode::FuncCall(_, _, _) => Ok(StmtNode::FuncCall(expr)),
+            _ => Err(String::from("Type Error")),
+        }
+    }
+
+    pub fn box_funccall(expr: Box<ExprNode>) -> Result<Box<StmtNode>, String> {
+        let funccall = StmtNode::new_funccall(expr)?;
+        Ok(Box::new(funccall))
     }
 
     pub fn gen(&self, b: &mut String, begin: i64, after: i64) -> Result<(), String> {
@@ -1023,6 +1068,9 @@ impl StmtNode {
                     emit(b, "return");
                 }
             },
+            StmtNode::FuncCall(expr) => {
+                expr.void_funccall(b)?;
+            }
             _ => (),
         }
         Ok(())
@@ -1062,7 +1110,7 @@ impl StmtNode {
                             return Err(String::from("Type error"));
                         }
                     }
-                    None => return Err(String::from("Type error"))
+                    None => return Err(String::from("Type error")),
                 },
                 None => {
                     if *tp != Type::void() {

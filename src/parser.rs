@@ -136,6 +136,7 @@ impl<T: std::io::Read> Parser<T> {
     }
 
     fn function(&mut self) -> Result<(), String> {
+        // TODO: palaa loopin käsittelyyn
         while self.look.match_tag(DEFINE) {
             self.match_token(DEFINE)?;
             let tp = match self.look.tag() {
@@ -313,6 +314,13 @@ impl<T: std::io::Read> Parser<T> {
         }
     }
 
+    /*
+
+                   let tok = id.op().to_owned();
+                   let tp = id.tp().to_owned();
+                   let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
+                   return Ok(funccall)
+    * */
     fn assign(&mut self) -> Result<Box<StmtNode>, String> {
         let token = self.look.to_owned();
         self.match_token(Tag::ID)?;
@@ -323,6 +331,13 @@ impl<T: std::io::Read> Parser<T> {
             self.next()?;
             let expr = self.boolean()?;
             let stmt = StmtNode::box_set(Box::new(id), expr)?;
+            self.match_token(b';')?;
+            return Ok(stmt);
+        } else if self.look.match_tag(b'(') {
+            let tok = id.op().to_owned();
+            let tp = id.tp().to_owned();
+            let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
+            let stmt = StmtNode::box_funccall(funccall)?;
             self.match_token(b';')?;
             return Ok(stmt);
         }
@@ -456,7 +471,7 @@ impl<T: std::io::Read> Parser<T> {
                     let tok = id.op().to_owned();
                     let tp = id.tp().to_owned();
                     let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
-                    return Ok(funccall)
+                    return Ok(funccall);
                 }
                 Ok(Box::new(id))
             }
