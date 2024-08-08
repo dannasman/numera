@@ -28,6 +28,7 @@ const DEFINE: u32 = Tag::DEFINE as u32;
 const RETURN: u32 = Tag::RETURN as u32;
 const VOID: u32 = Tag::VOID as u32;
 const BASIC: u32 = Tag::BASIC as u32;
+const EOF: u32 = Tag::EOF as u32;
 
 pub struct Env {
     table: HashMap<String, ExprNode>,
@@ -136,8 +137,7 @@ impl<T: std::io::Read> Parser<T> {
     }
 
     fn function(&mut self) -> Result<(), String> {
-        // TODO: palaa loopin käsittelyyn
-        while self.look.match_tag(DEFINE) {
+        while !self.look.match_tag(EOF) {
             self.match_token(DEFINE)?;
             let tp = match self.look.tag() {
                 BASIC => self.tp()?,

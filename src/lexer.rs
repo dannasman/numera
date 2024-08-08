@@ -45,6 +45,10 @@ impl<T: std::io::Read> Lexer<T> {
                     String::from("return"),
                     Token::Word(String::from("return"), Tag::RETURN),
                 ),
+                (
+                    String::from("eof"),
+                    Token::Eof,
+                ),
             ]),
             reader: source,
         };
