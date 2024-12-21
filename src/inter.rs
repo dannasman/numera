@@ -618,10 +618,12 @@ impl ExprNode {
 
     pub fn jumping(&self, b: &mut String, t: i64, f: i64) -> Result<(), String> {
         match self {
-            ExprNode::Rel(op, _, left, right) => {
+            ExprNode::Rel(op, tp, left, right) => {
                 let lr = left.reduce(b)?;
                 let rr = right.reduce(b)?;
-                emit_jumps(b, format!("{} {} {}", lr, op, rr).as_str(), t, f);
+                let tmp = ExprNode::new_temp(tp);
+                emit(b, &format!("{} = {} {} {}", tmp, lr, op, rr));
+                emit_jumps(b, &format!("{}", tmp), t, f);
             }
             ExprNode::Not(_, _, expr) => {
                 expr.jumping(b, f, t)?;
