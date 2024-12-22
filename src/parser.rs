@@ -4,6 +4,7 @@ use std::mem::swap;
 
 use super::inter::*;
 use super::lexer::Lexer;
+use super::tac::TACInstruction;
 use super::tokens::{Tag, Token};
 
 const OPEN_BR: u32 = b'{' as u32;
@@ -102,12 +103,12 @@ impl<T: std::io::Read> Parser<T> {
         Ok(res)
     }
 
-    pub fn program(&mut self, s: &mut String) -> Result<(), String> {
+    pub fn program(&mut self, ir: &mut Vec<TACInstruction>) -> Result<(), String> {
         self.function()?;
         for function in &self.functions {
             let begin = new_label();
             let after = new_label();
-            function.gen(s, begin, after)?;
+            function.gen(ir, begin, after)?;
         }
         /*let stmt = self.block()?;
         let begin = new_label();
@@ -528,7 +529,6 @@ impl<T: std::io::Read> Parser<T> {
             };
             let width = ExprNode::box_constant(Token::Num(tp.width() as i64))?;
             let t1 = ExprNode::box_arith(Token::Token(b'*'), index, width)?;
-
             let t2 = ExprNode::box_arith(Token::Token(b'*'), loc, t1)?;
             loc = t2;
         }

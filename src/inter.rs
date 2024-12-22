@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use super::tac::*;
 use super::tokens::{Tag, Token};
 
 thread_local! {
@@ -24,26 +25,56 @@ pub fn reset_labels() {
     });
 }
 
-pub fn emit_label(s: &mut String, i: i64) {
-    s.push_str(&format!("L{}:", i));
+pub fn emit_label(ir: &mut Vec<TACInstruction>, i: i64) {
+    let tac = TACInstruction {
+        op: TACOperator::Null,
+        arg1: TACOperand::Null,
+        arg2: TACOperand::Null,
+        res: TACOperand::Label(i),
+    };
+    ir.push(tac)
 }
 
-pub fn emit(s: &mut String, st: &str) {
-    s.push_str(&format!("\t{}\n", st));
+pub fn emit_function(ir: &mut Vec<TACInstruction>, id: String) {
+    let tac = TACInstruction {
+        op: TACOperator::Null,
+        arg1: TACOperand::Null,
+        arg2: TACOperand::Null,
+        res: TACOperand::Function(id),
+    };
+    ir.push(tac)
 }
 
-pub fn emit_noindent(s: &mut String, st: &str) {
-    s.push_str(&format!("{}\n", st));
+pub fn emit(ir: &mut Vec<TACInstruction>, tac: TACInstruction) {
+    ir.push(tac);
 }
 
-pub fn emit_jumps(s: &mut String, test: &str, t: i64, f: i64) {
+pub fn emit_jumps(ir: &mut Vec<TACInstruction>, test: TACOperand, t: i64, f: i64) {
+    let tac_t = TACInstruction {
+        op: TACOperator::If,
+        arg1: test.to_owned(),
+        arg2: TACOperand::Null,
+        res: TACOperand::Label(t),
+    };
     if t != 0 && f != 0 {
-        emit(s, &format!("if {} goto L{}", test, t));
-        emit(s, &format!("goto L{}", f));
+        emit(ir, tac_t);
+        let tac_f = TACInstruction {
+            op: TACOperator::Goto,
+            arg1: TACOperand::Null,
+            arg2: TACOperand::Null,
+            res: TACOperand::Label(f),
+        };
+        emit(ir, tac_f);
     } else if t != 0 {
-        emit(s, &format!("if {} goto L{}", test, t));
+        emit(ir, tac_t);
     } else if f != 0 {
-        emit(s, &format!("iffalse {} goto L{}", test, f));
+        let tac_f = TACInstruction {
+            op: TACOperator::Iff,
+            arg1: test,
+            arg2: TACOperand::Null,
+            res: TACOperand::Label(f),
+        };
+        emit(ir, tac_f);
     }
 }
 
@@ -356,6 +387,94 @@ impl ExprNode {
         }
     }
 
+    pub fn return_offset(&self) -> Result<i32, String> {
+        match self {
+            ExprNode::Id(_, _, offset) => Ok(*offset),
+            _ => Err(String::from("Failed to return offset")),
+        }
+    }
+
+    pub fn expr_to_tac(&self) -> Result<TACOperand, String> {
+        match self {
+            ExprNode::Constant(op, tp) => Ok(TACOperand::Const(op.to_string(), tp.to_owned())),
+            ExprNode::Id(op, tp, offset) => {
+                Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
+            }
+            ExprNode::Temp(_, tp, num) => Ok(TACOperand::Temp(format!("t{}", num), tp.to_owned())),
+            ExprNode::Access(_, array, index, tp) => Ok(TACOperand::Array(
+                array.to_string(),
+                index.to_string(),
+                tp.to_owned(),
+                array.return_offset()?,
+            )),
+            _ => Err(String::from("Failed to generate TAC from given expression")),
+        }
+    }
+
+    pub fn operator_to_tac(&self) -> Result<TACOperator, String> {
+        match self {
+            ExprNode::Arith(op, _, _, _) => {
+                if op.tag() == Token::Token('+' as u8).tag() {
+                    Ok(TACOperator::Add)
+                } else if op.tag() == Token::Token('-' as u8).tag() {
+                    Ok(TACOperator::Sub)
+                } else if op.tag() == Token::Token('*' as u8).tag() {
+                    Ok(TACOperator::Mul)
+                } else if op.tag() == Token::Token('/' as u8).tag() {
+                    Ok(TACOperator::Div)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Unary(op, _, _) => {
+                if op.tag() == Tag::MINUS.into() {
+                    Ok(TACOperator::Sub)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Rel(op, _, _, _) => {
+                if op.tag() == Token::Token('<' as u8).tag() {
+                    Ok(TACOperator::Lt)
+                } else if op.tag() == Token::Token('>' as u8).tag() {
+                    Ok(TACOperator::Gt)
+                } else if op.tag() == Tag::LE.into() {
+                    Ok(TACOperator::Le)
+                } else if op.tag() == Tag::GE.into() {
+                    Ok(TACOperator::Ge)
+                } else if op.tag() == Tag::EQ.into() {
+                    Ok(TACOperator::Eql)
+                } else if op.tag() == Tag::NE.into() {
+                    Ok(TACOperator::Ne)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Not(op, _, _) => {
+                if op.tag() == Token::Token('-' as u8).tag() {
+                    Ok(TACOperator::Not)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Or(op, _, _, _) => {
+                if op.tag() == Tag::OR.into() {
+                    Ok(TACOperator::Or)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::And(op, _, _, _) => {
+                if op.tag() == Tag::AND.into() {
+                    Ok(TACOperator::And)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            _ => Err(String::from("Failed to generate TAC from given operator")),
+        }
+    }
+
     pub fn new_true() -> ExprNode {
         ExprNode::Constant(Token::ttrue(), Type::bool())
     }
@@ -594,7 +713,7 @@ impl ExprNode {
         Ok(Box::new(funccall))
     }
 
-    pub fn void_funccall(&self, b: &mut String) -> Result<(), String> {
+    pub fn void_funccall(&self, ir: &mut Vec<TACInstruction>) -> Result<(), String> {
         if let ExprNode::FuncCall(id, tp, params) = self {
             if *tp != Type::Void {
                 return Err(String::from("Type Error"));
@@ -602,41 +721,59 @@ impl ExprNode {
             let mut count = 0;
             let mut params_reduced = Vec::<Box<ExprNode>>::new();
             for param in params.into_iter().rev() {
-                let expr = param.reduce(b)?;
+                let expr = param.reduce(ir)?;
                 params_reduced.push(expr);
                 count += 1;
             }
             for param in params_reduced {
-                emit(b, &format!("param {}", param));
+                let tac_param = TACInstruction {
+                    op: TACOperator::Param,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: param.expr_to_tac()?,
+                };
+                emit(ir, tac_param);
             }
-            emit(b, &format!("call {}, {}", id, count));
+            let tac_call = TACInstruction {
+                op: TACOperator::Call(count),
+                arg1: TACOperand::Null,
+                arg2: TACOperand::Null,
+                res: TACOperand::Function(id.to_string()),
+            };
+            emit(ir, tac_call);
             Ok(())
         } else {
             Err(String::from("Expression is not a function call"))
         }
     }
 
-    pub fn jumping(&self, b: &mut String, t: i64, f: i64) -> Result<(), String> {
+    pub fn jumping(&self, ir: &mut Vec<TACInstruction>, t: i64, f: i64) -> Result<(), String> {
         match self {
-            ExprNode::Rel(op, tp, left, right) => {
-                let lr = left.reduce(b)?;
-                let rr = right.reduce(b)?;
+            ExprNode::Rel(_, tp, left, right) => {
+                let lr = left.reduce(ir)?;
+                let rr = right.reduce(ir)?;
                 let tmp = ExprNode::new_temp(tp);
-                emit(b, &format!("{} = {} {} {}", tmp, lr, op, rr));
-                emit_jumps(b, &format!("{}", tmp), t, f);
+                let tac = TACInstruction {
+                    op: self.operator_to_tac()?,
+                    arg1: lr.expr_to_tac()?,
+                    arg2: rr.expr_to_tac()?,
+                    res: tmp.expr_to_tac()?,
+                };
+                emit(ir, tac);
+                emit_jumps(ir, tmp.expr_to_tac()?, t, f);
             }
             ExprNode::Not(_, _, expr) => {
-                expr.jumping(b, f, t)?;
+                expr.jumping(ir, f, t)?;
             }
             ExprNode::Or(_, _, left, right) => {
                 let mut label = t;
                 if t == 0 {
                     label = new_label();
                 }
-                left.jumping(b, label, 0)?;
-                right.jumping(b, t, f)?;
+                left.jumping(ir, label, 0)?;
+                right.jumping(ir, t, f)?;
                 if t == 0 {
-                    emit_label(b, label);
+                    emit_label(ir, label);
                 }
             }
             ExprNode::And(_, _, left, right) => {
@@ -644,35 +781,35 @@ impl ExprNode {
                 if f == 0 {
                     label = new_label();
                 }
-                left.jumping(b, 0, label)?;
-                right.jumping(b, t, f)?;
+                left.jumping(ir, 0, label)?;
+                right.jumping(ir, t, f)?;
 
                 if f == 0 {
-                    emit_label(b, label);
+                    emit_label(ir, label);
                 }
             }
-            _ => emit_jumps(b, format!("{}", self).as_str(), t, f),
+            _ => emit_jumps(ir, self.expr_to_tac()?, t, f),
         }
         Ok(())
     }
 
-    pub fn gen(&self, b: &mut String) -> Result<Box<ExprNode>, String> {
+    pub fn gen(&self, ir: &mut Vec<TACInstruction>) -> Result<Box<ExprNode>, String> {
         match self {
             ExprNode::Arith(op, _, left, right) => {
-                let lr = left.reduce(b)?;
-                let rr = right.reduce(b)?;
+                let lr = left.reduce(ir)?;
+                let rr = right.reduce(ir)?;
                 match ExprNode::new_arith(op.to_owned(), lr, rr) {
                     Ok(arith) => Ok(Box::new(arith)),
                     Err(s) => Err(s),
                 }
             }
             ExprNode::Unary(op, _, expr) => {
-                let rexpr = expr.reduce(b)?;
+                let rexpr = expr.reduce(ir)?;
                 let unary = ExprNode::new_unary(op.to_owned(), rexpr)?;
                 Ok(Box::new(unary))
             }
             ExprNode::Access(_, array, index, tp) => {
-                let i = index.reduce(b)?;
+                let i = index.reduce(ir)?;
                 Ok(Box::new(ExprNode::Access(
                     Token::access(),
                     array.to_owned(),
@@ -687,42 +824,78 @@ impl ExprNode {
                 let f = new_label();
                 let a = new_label();
                 let tmp = ExprNode::new_temp(tp);
-                self.jumping(b, 0, f)?;
-                emit(b, format!("{} = true", tmp).as_str());
-                emit(b, format!("goto L{}", a).as_str());
-                emit_label(b, f);
-                emit(b, format!("{} = false", tmp).as_str());
-                emit_label(b, a);
+                self.jumping(ir, 0, f)?;
+                let tac_true = TACInstruction {
+                    op: TACOperator::Assign,
+                    arg1: TACOperand::True,
+                    arg2: TACOperand::Null,
+                    res: tmp.expr_to_tac()?,
+                };
+                let tac_goto = TACInstruction {
+                    op: TACOperator::Goto,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Label(a),
+                };
+                let tac_false = TACInstruction {
+                    op: TACOperator::Assign,
+                    arg1: TACOperand::False,
+                    arg2: TACOperand::Null,
+                    res: tmp.expr_to_tac()?,
+                };
+                emit(ir, tac_true);
+                emit(ir, tac_goto);
+                emit_label(ir, f);
+                emit(ir, tac_false);
+                emit_label(ir, a);
                 Ok(Box::new(tmp))
             }
-            ExprNode::FuncCall(_, _, _) => self.reduce(b),
+            ExprNode::FuncCall(_, _, _) => self.reduce(ir),
             _ => Ok(self.box_clone()),
         }
     }
 
-    pub fn reduce(&self, b: &mut String) -> Result<Box<ExprNode>, String> {
+    pub fn reduce(&self, ir: &mut Vec<TACInstruction>) -> Result<Box<ExprNode>, String> {
         match self {
             ExprNode::Arith(_, tp, _, _)
             | ExprNode::Unary(_, tp, _)
             | ExprNode::Access(_, _, _, tp) => {
-                let x = self.gen(b)?;
+                let x = self.gen(ir)?;
                 let tmp = ExprNode::new_temp(tp);
-                emit(b, format!("{} = {}", tmp, x).as_str());
+                let tac = TACInstruction {
+                    op: TACOperator::Assign,
+                    arg1: x.expr_to_tac()?,
+                    arg2: TACOperand::Null,
+                    res: tmp.expr_to_tac()?,
+                };
+                emit(ir, tac);
                 Ok(Box::new(tmp))
             }
             ExprNode::FuncCall(id, tp, params) => {
                 let mut count = 0;
                 let mut params_reduced = Vec::<Box<ExprNode>>::new();
                 for param in params.into_iter().rev() {
-                    let expr = param.reduce(b)?;
+                    let expr = param.reduce(ir)?;
                     params_reduced.push(expr);
                     count += 1;
                 }
                 for param in params_reduced {
-                    emit(b, &format!("param {}", param));
+                    let tac_param = TACInstruction {
+                        op: TACOperator::Param,
+                        arg1: TACOperand::Null,
+                        arg2: TACOperand::Null,
+                        res: param.expr_to_tac()?,
+                    };
+                    emit(ir, tac_param);
                 }
                 let tmp = ExprNode::new_temp(tp);
-                emit(b, &format!("{} = call {}, {}", tmp, id, count));
+                let tac_call = TACInstruction {
+                    op: TACOperator::Call(count),
+                    arg1: TACOperand::Function(id.to_string()),
+                    arg2: TACOperand::Null,
+                    res: tmp.expr_to_tac()?,
+                };
+                emit(ir, tac_call);
                 Ok(Box::new(tmp))
             }
             _ => Ok(self.box_clone()),
@@ -989,89 +1162,147 @@ impl StmtNode {
         Ok(Box::new(funccall))
     }
 
-    pub fn gen(&self, b: &mut String, begin: i64, after: i64) -> Result<(), String> {
+    pub fn gen(&self, ir: &mut Vec<TACInstruction>, begin: i64, after: i64) -> Result<(), String> {
         match self {
             StmtNode::Set(id, expr) => {
-                let e = expr.gen(b)?;
-                emit(b, &format!("{} = {}", id, e));
+                let e = expr.gen(ir)?;
+                let tac = TACInstruction {
+                    op: TACOperator::Assign,
+                    arg1: e.expr_to_tac()?,
+                    arg2: TACOperand::Null,
+                    res: id.expr_to_tac()?,
+                };
+                emit(ir, tac);
             }
             StmtNode::SetElem(array, index, expr) => {
-                let i = index.reduce(b)?;
-                let e = expr.reduce(b)?;
-                emit(b, &format!("{} [ {} ] = {}", array, i, e));
+                let i = index.reduce(ir)?;
+                let e = expr.reduce(ir)?;
+                let tac = TACInstruction {
+                    op: TACOperator::Assign,
+                    arg1: e.expr_to_tac()?,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Array(
+                        array.to_string(),
+                        i.to_string(),
+                        array.return_tp()?,
+                        array.return_offset()?,
+                    ),
+                };
+                emit(ir, tac);
             }
             StmtNode::Seq(head, tail) => {
                 if head.is_null() {
-                    tail.gen(b, begin, after)?;
+                    tail.gen(ir, begin, after)?;
                 } else if tail.is_null() {
-                    head.gen(b, begin, after)?;
+                    head.gen(ir, begin, after)?;
                 } else {
                     let label = new_label();
-                    head.gen(b, begin, label)?;
-                    emit_label(b, label);
-                    tail.gen(b, label, after)?;
+                    head.gen(ir, begin, label)?;
+                    emit_label(ir, label);
+                    tail.gen(ir, label, after)?;
                 }
             }
             StmtNode::If(cond, body) => {
                 let label = new_label();
-                cond.jumping(b, 0, after)?;
-                emit_label(b, label);
-                body.gen(b, label, after)?;
+                cond.jumping(ir, 0, after)?;
+                emit_label(ir, label);
+                body.gen(ir, label, after)?;
             }
             StmtNode::Else(cond, true_stmt, false_stmt) => {
                 let label_if = new_label();
                 let label_else = new_label();
-                cond.jumping(b, 0, label_else)?;
-                emit_label(b, label_if);
-                true_stmt.gen(b, label_if, after)?;
-                emit(b, &format!("goto L{}", after));
-                emit_label(b, label_else);
-                false_stmt.gen(b, label_else, after)?;
+                cond.jumping(ir, 0, label_else)?;
+                emit_label(ir, label_if);
+                true_stmt.gen(ir, label_if, after)?;
+                let tac = TACInstruction {
+                    op: TACOperator::Goto,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Label(after),
+                };
+                emit(ir, tac);
+                emit_label(ir, label_else);
+                false_stmt.gen(ir, label_else, after)?;
             }
             StmtNode::While(cond, body) => {
                 self.after(after);
-                cond.jumping(b, 0, after)?;
+                cond.jumping(ir, 0, after)?;
                 let label = new_label();
-                emit_label(b, label);
-                body.gen(b, label, begin)?;
-                emit(b, &format!("goto L{}", begin));
+                emit_label(ir, label);
+                body.gen(ir, label, begin)?;
+                let tac = TACInstruction {
+                    op: TACOperator::Goto,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Label(after),
+                };
+                emit(ir, tac);
             }
             StmtNode::Do(cond, body) => {
                 self.after(after);
                 let label = new_label();
-                body.gen(b, begin, label)?;
-                emit_label(b, label);
-                cond.jumping(b, begin, 0)?;
+                body.gen(ir, begin, label)?;
+                emit_label(ir, label);
+                cond.jumping(ir, begin, 0)?;
             }
             StmtNode::Break(after) => {
                 let a = after.borrow();
                 if *a == 0 {
                     return Err(String::from("Unenclosed break"));
                 }
-                emit(b, &format!("goto L{}", *a));
+                let tac = TACInstruction {
+                    op: TACOperator::Goto,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Label(*a),
+                };
+                emit(ir, tac);
             }
-            // TODO: returnin käsittely kuntoon
             StmtNode::FuncDef(id, body, used) => {
                 let ret_tp = id.return_tp()?;
                 self.ret(&ret_tp)?;
-                emit_noindent(b, &format!("{}:", id));
-                emit(b, &format!("begin {}", used));
-                emit_label(b, begin);
-                body.gen(b, begin, after)?;
-                emit_label(b, after);
-                emit(b, "end");
+                emit_function(ir, id.to_string());
+                let tac_begin = TACInstruction {
+                    op: TACOperator::Begin(*used),
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Null,
+                };
+                let tac_end = TACInstruction {
+                    op: TACOperator::End,
+                    arg1: TACOperand::Null,
+                    arg2: TACOperand::Null,
+                    res: TACOperand::Null,
+                };
+                emit(ir, tac_begin);
+                emit_label(ir, begin);
+                body.gen(ir, begin, after)?;
+                emit_label(ir, after);
+                emit(ir, tac_end);
             }
             StmtNode::Return(expr) => match expr {
                 Some(e) => {
-                    let return_value = e.reduce(b)?;
-                    emit(b, &format!("return {}", return_value));
+                    let return_value = e.reduce(ir)?;
+                    let tac = TACInstruction {
+                        op: TACOperator::Ret,
+                        arg1: TACOperand::Null,
+                        arg2: TACOperand::Null,
+                        res: return_value.expr_to_tac()?,
+                    };
+                    emit(ir, tac);
                 }
                 None => {
-                    emit(b, "return");
+                    let tac = TACInstruction {
+                        op: TACOperator::Ret,
+                        arg1: TACOperand::Null,
+                        arg2: TACOperand::Null,
+                        res: TACOperand::Null,
+                    };
+                    emit(ir, tac);
                 }
             },
             StmtNode::FuncCall(expr) => {
-                expr.void_funccall(b)?;
+                expr.void_funccall(ir)?;
             }
             _ => (),
         }
