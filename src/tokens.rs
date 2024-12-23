@@ -26,7 +26,7 @@ pub enum Tag {
     RETURN,
     FUNCTION,
     VOID,
-    EOF = std::u32::MAX as isize,
+    EOF,
 }
 
 impl Into<u32> for Tag {

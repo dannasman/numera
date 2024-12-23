@@ -12,7 +12,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(source: Box<dyn BufRead>) -> Lexer {
-        let lexer = Lexer {
+        Lexer {
             line: 1,
             peek: b' ',
             words: HashMap::from([
@@ -48,8 +48,7 @@ impl Lexer {
                 (String::from("eof"), Token::Eof),
             ]),
             reader: source,
-        };
-        lexer
+        }
     }
 
     fn read_ch(&mut self, c: u8) -> Result<bool> {
@@ -154,7 +153,7 @@ impl Lexer {
                         _ => Err(err),
                     },
                 }
-            },
+            }
             b'\0' => {
                 return Ok(Token::Eof);
             }

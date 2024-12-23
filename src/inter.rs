@@ -860,9 +860,7 @@ impl ExprNode {
 
     pub fn reduce(&self, ir: &mut TACIr) -> Result<Box<ExprNode>, String> {
         match self {
-            ExprNode::Arith(_, tp, _, _)
-            | ExprNode::Unary(_, tp, _)
-            | ExprNode::Access(_, _, _, tp) => {
+            ExprNode::Arith(_, tp, _, _) | ExprNode::Unary(_, tp, _) => {
                 let x = self.gen(ir)?;
                 let tmp = ExprNode::new_temp(tp);
                 let op = x.operator_to_tac()?;
@@ -1191,11 +1189,25 @@ impl StmtNode {
         match self {
             StmtNode::Set(id, expr) => {
                 let e = expr.gen(ir)?;
-                let tac = TACInstruction {
-                    op: TACOperator::Assign,
-                    arg1: e.expr_to_tac()?,
-                    arg2: TACOperand::Null,
-                    res: id.expr_to_tac()?,
+                let tac = match *e {
+                    ExprNode::Arith(_, _, left, right) => TACInstruction {
+                        op: expr.operator_to_tac()?,
+                        arg1: left.expr_to_tac()?,
+                        arg2: right.expr_to_tac()?,
+                        res: id.expr_to_tac()?,
+                    },
+                    ExprNode::Unary(_, _, unary) => TACInstruction {
+                        op: expr.operator_to_tac()?,
+                        arg1: TACOperand::Null,
+                        arg2: unary.expr_to_tac()?,
+                        res: id.expr_to_tac()?,
+                    },
+                    _ => TACInstruction {
+                        op: TACOperator::Assign,
+                        arg1: e.expr_to_tac()?,
+                        arg2: TACOperand::Null,
+                        res: id.expr_to_tac()?,
+                    },
                 };
                 emit(ir, tac);
             }

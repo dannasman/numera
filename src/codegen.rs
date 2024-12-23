@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Mutex;
 
-use crate::inter::{ExprNode, StmtNode};
+use crate::tac::*;
 
 #[derive(Debug, Clone)]
 enum Register {
@@ -46,7 +46,7 @@ impl fmt::Display for Register {
     }
 }
 
-static mut REGISTER_DESCRIPTOR: Mutex<[(Register, Option<ExprNode>); 16]> = Mutex::new([
+static mut REGISTER_DESCRIPTOR: Mutex<[(Register, Option<TACOperand>); 16]> = Mutex::new([
     (Register::RAX, None),
     (Register::RBX, None),
     (Register::RCX, None),
@@ -65,7 +65,7 @@ static mut REGISTER_DESCRIPTOR: Mutex<[(Register, Option<ExprNode>); 16]> = Mute
     (Register::R15, None),
 ]);
 
-pub fn get_reg(val: ExprNode) -> Result<Register, &'static str> {
+pub fn get_reg(val: TACOperand) -> Result<Register, &'static str> {
     let mut registers = unsafe { REGISTER_DESCRIPTOR.lock().unwrap() };
     let begin = 3;
     let end = registers.len();
@@ -117,6 +117,10 @@ impl AddressDescriptor {
         }
         None
     }
+
+    pub fn clear(&mut self) {
+        self.table.clear()
+    }
 }
 
 static mut ADDRESS_DESCRIPTOR: Mutex<AddressDescriptor> = Mutex::new(AddressDescriptor::new());
@@ -132,7 +136,3 @@ pub fn get_value(s: String) -> Option<Register> {
 pub trait CodeGen {
     fn codegen(&self, s: &mut String) {}
 }
-
-impl CodeGen for ExprNode {}
-
-impl CodeGen for StmtNode {}
