@@ -1,17 +1,17 @@
 use std::collections::HashMap;
-use std::io::{BufReader, ErrorKind, Read, Result};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Result};
 
 use super::tokens::{Tag, Token};
 
-pub struct Lexer<T: std::io::Read> {
+pub struct Lexer {
     pub line: u32,
     peek: u8,
     words: HashMap<String, Token>,
-    reader: BufReader<T>,
+    reader: Box<dyn BufRead>,
 }
 
-impl<T: std::io::Read> Lexer<T> {
-    pub fn new(source: BufReader<T>) -> Lexer<T> {
+impl Lexer {
+    pub fn new(source: Box<dyn BufRead>) -> Lexer {
         let lexer = Lexer {
             line: 1,
             peek: b' ',

@@ -4,7 +4,7 @@ use std::mem::swap;
 
 use super::inter::*;
 use super::lexer::Lexer;
-use super::tac::TACInstruction;
+use super::tac::TACIr;
 use super::tokens::{Tag, Token};
 
 const OPEN_BR: u32 = b'{' as u32;
@@ -82,16 +82,16 @@ impl Env {
     }
 }
 
-pub struct Parser<T: std::io::Read> {
-    lex: Lexer<T>,
+pub struct Parser {
+    lex: Lexer,
     look: Token,
     top: Box<Env>,
     functions: Vec<StmtNode>,
     used: i64,
 }
 
-impl<T: std::io::Read> Parser<T> {
-    pub fn new(lex: Lexer<T>) -> Result<Parser<T>, String> {
+impl Parser {
+    pub fn new(lex: Lexer) -> Result<Parser, String> {
         let mut res = Parser {
             lex,
             look: Token::Eof,
@@ -103,7 +103,7 @@ impl<T: std::io::Read> Parser<T> {
         Ok(res)
     }
 
-    pub fn program(&mut self, ir: &mut Vec<TACInstruction>) -> Result<(), String> {
+    pub fn program(&mut self, ir: &mut TACIr) -> Result<(), String> {
         self.function()?;
         for function in &self.functions {
             let begin = new_label();

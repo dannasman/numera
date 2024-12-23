@@ -25,7 +25,7 @@ pub fn reset_labels() {
     });
 }
 
-pub fn emit_label(ir: &mut Vec<TACInstruction>, i: i64) {
+pub fn emit_label(ir: &mut TACIr, i: i64) {
     let tac = TACInstruction {
         op: TACOperator::Null,
         arg1: TACOperand::Null,
@@ -35,7 +35,7 @@ pub fn emit_label(ir: &mut Vec<TACInstruction>, i: i64) {
     ir.push(tac)
 }
 
-pub fn emit_function(ir: &mut Vec<TACInstruction>, id: String) {
+pub fn emit_function(ir: &mut TACIr, id: String) {
     let tac = TACInstruction {
         op: TACOperator::Null,
         arg1: TACOperand::Null,
@@ -45,11 +45,11 @@ pub fn emit_function(ir: &mut Vec<TACInstruction>, id: String) {
     ir.push(tac)
 }
 
-pub fn emit(ir: &mut Vec<TACInstruction>, tac: TACInstruction) {
+pub fn emit(ir: &mut TACIr, tac: TACInstruction) {
     ir.push(tac);
 }
 
-pub fn emit_jumps(ir: &mut Vec<TACInstruction>, test: TACOperand, t: i64, f: i64) {
+pub fn emit_jumps(ir: &mut TACIr, test: TACOperand, t: i64, f: i64) {
     let tac_t = TACInstruction {
         op: TACOperator::If,
         arg1: test.to_owned(),
@@ -407,7 +407,10 @@ impl ExprNode {
                 tp.to_owned(),
                 array.return_offset()?,
             )),
-            _ => Err(String::from("Failed to generate TAC from given expression")),
+            _ => Err(format!(
+                "Failed to generate TAC from given expression {}",
+                self
+            )),
         }
     }
 
@@ -713,7 +716,7 @@ impl ExprNode {
         Ok(Box::new(funccall))
     }
 
-    pub fn void_funccall(&self, ir: &mut Vec<TACInstruction>) -> Result<(), String> {
+    pub fn void_funccall(&self, ir: &mut TACIr) -> Result<(), String> {
         if let ExprNode::FuncCall(id, tp, params) = self {
             if *tp != Type::Void {
                 return Err(String::from("Type Error"));
@@ -747,7 +750,7 @@ impl ExprNode {
         }
     }
 
-    pub fn jumping(&self, ir: &mut Vec<TACInstruction>, t: i64, f: i64) -> Result<(), String> {
+    pub fn jumping(&self, ir: &mut TACIr, t: i64, f: i64) -> Result<(), String> {
         match self {
             ExprNode::Rel(_, tp, left, right) => {
                 let lr = left.reduce(ir)?;
@@ -793,7 +796,7 @@ impl ExprNode {
         Ok(())
     }
 
-    pub fn gen(&self, ir: &mut Vec<TACInstruction>) -> Result<Box<ExprNode>, String> {
+    pub fn gen(&self, ir: &mut TACIr) -> Result<Box<ExprNode>, String> {
         match self {
             ExprNode::Arith(op, _, left, right) => {
                 let lr = left.reduce(ir)?;
@@ -855,11 +858,33 @@ impl ExprNode {
         }
     }
 
-    pub fn reduce(&self, ir: &mut Vec<TACInstruction>) -> Result<Box<ExprNode>, String> {
+    pub fn reduce(&self, ir: &mut TACIr) -> Result<Box<ExprNode>, String> {
         match self {
             ExprNode::Arith(_, tp, _, _)
             | ExprNode::Unary(_, tp, _)
             | ExprNode::Access(_, _, _, tp) => {
+                let x = self.gen(ir)?;
+                let tmp = ExprNode::new_temp(tp);
+                let op = x.operator_to_tac()?;
+                let tac = match *x {
+                    ExprNode::Arith(_, _, left, right) => TACInstruction {
+                        op,
+                        arg1: left.expr_to_tac()?,
+                        arg2: right.expr_to_tac()?,
+                        res: tmp.expr_to_tac()?,
+                    },
+                    ExprNode::Unary(_, _, expr) => TACInstruction {
+                        op,
+                        arg1: expr.expr_to_tac()?,
+                        arg2: TACOperand::Null,
+                        res: tmp.expr_to_tac()?,
+                    },
+                    _ => return Err(format!("Failed to generate TAC from {}", x)),
+                };
+                emit(ir, tac);
+                Ok(Box::new(tmp))
+            }
+            ExprNode::Access(_, _, _, tp) => {
                 let x = self.gen(ir)?;
                 let tmp = ExprNode::new_temp(tp);
                 let tac = TACInstruction {
@@ -1162,7 +1187,7 @@ impl StmtNode {
         Ok(Box::new(funccall))
     }
 
-    pub fn gen(&self, ir: &mut Vec<TACInstruction>, begin: i64, after: i64) -> Result<(), String> {
+    pub fn gen(&self, ir: &mut TACIr, begin: i64, after: i64) -> Result<(), String> {
         match self {
             StmtNode::Set(id, expr) => {
                 let e = expr.gen(ir)?;
@@ -1184,7 +1209,7 @@ impl StmtNode {
                     res: TACOperand::Array(
                         array.to_string(),
                         i.to_string(),
-                        array.return_tp()?,
+                        array.tp().to_owned(),
                         array.return_offset()?,
                     ),
                 };
@@ -1234,7 +1259,7 @@ impl StmtNode {
                     op: TACOperator::Goto,
                     arg1: TACOperand::Null,
                     arg2: TACOperand::Null,
-                    res: TACOperand::Label(after),
+                    res: TACOperand::Label(begin),
                 };
                 emit(ir, tac);
             }
