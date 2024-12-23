@@ -65,6 +65,7 @@ impl Lexer {
         let mut buf = [0; 1];
         if let Err(err) = self.reader.read_exact(&mut buf) {
             if let ErrorKind::UnexpectedEof = err.kind() {
+                self.peek = b'\0';
                 return Ok(());
             } else {
                 return Err(err);
@@ -92,6 +93,7 @@ impl Lexer {
             }
             break;
         }
+
         match self.peek {
             b'&' => {
                 return match self.read_ch(b'&') {
@@ -152,6 +154,9 @@ impl Lexer {
                         _ => Err(err),
                     },
                 }
+            },
+            b'\0' => {
+                return Ok(Token::Eof);
             }
             _ => (),
         }
