@@ -133,6 +133,3 @@ pub fn get_value(s: String) -> Option<Register> {
     unsafe { ADDRESS_DESCRIPTOR.lock().unwrap().get(s) }
 }
 
-pub trait CodeGen {
-    fn codegen(&self, s: &mut String) {}
-}

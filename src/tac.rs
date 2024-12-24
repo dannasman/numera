@@ -93,10 +93,21 @@ impl fmt::Display for TACOperand {
 
 #[derive(Debug, Clone)]
 pub struct TACInstruction {
-    pub op: TACOperator,
-    pub arg1: TACOperand,
-    pub arg2: TACOperand,
-    pub res: TACOperand,
+    op: TACOperator,
+    arg1: TACOperand,
+    arg2: TACOperand,
+    res: TACOperand,
+}
+
+impl TACInstruction {
+    pub fn new(op: TACOperator, arg1: TACOperand, arg2: TACOperand, res: TACOperand) -> Self {
+        TACInstruction {
+            op,
+            arg1,
+            arg2,
+            res
+        }
+    }
 }
 
 impl fmt::Display for TACInstruction {
