@@ -398,7 +398,7 @@ impl ExprNode {
         match self {
             ExprNode::Constant(op, tp) => Ok(TACOperand::Const(op.to_string(), tp.to_owned())),
             ExprNode::Id(op, tp, offset) => {
-                Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
+                Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset + 4))
             }
             ExprNode::Temp(_, tp, num) => Ok(TACOperand::Temp(format!("t{}", num), tp.to_owned())),
             ExprNode::Access(_, array, index, tp) => Ok(TACOperand::Array(
@@ -731,9 +731,9 @@ impl ExprNode {
             for param in params_reduced {
                 let tac_param = TACInstruction::new(
                     TACOperator::Param,
-                    TACOperand::Null,
-                    TACOperand::Null,
                     param.operand_to_tac()?,
+                    TACOperand::Null,
+                    TACOperand::Null,
                 );
                 emit(ir, tac_param);
             }
@@ -905,9 +905,9 @@ impl ExprNode {
                 for param in params_reduced {
                     let tac_param = TACInstruction::new(
                         TACOperator::Param,
-                        TACOperand::Null,
-                        TACOperand::Null,
                         param.operand_to_tac()?,
+                        TACOperand::Null,
+                        TACOperand::Null,
                     );
                     emit(ir, tac_param);
                 }
@@ -1000,7 +1000,7 @@ pub enum StmtNode {
     Do(Box<ExprNode>, Box<StmtNode>),
     Break(Rc<RefCell<i64>>),
     FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
-    Return(Option<Box<ExprNode>>),
+    Return(Rc<RefCell<i64>>, Option<Box<ExprNode>>),
     FuncCall(Box<ExprNode>),
 }
 
@@ -1166,7 +1166,7 @@ impl StmtNode {
     }
 
     pub fn new_return(expr: Option<Box<ExprNode>>) -> StmtNode {
-        StmtNode::Return(expr)
+        StmtNode::Return(Rc::new(RefCell::new(0)), expr)
     }
 
     pub fn box_return(expr: Option<Box<ExprNode>>) -> Box<StmtNode> {
@@ -1296,46 +1296,69 @@ impl StmtNode {
                 emit(ir, tac);
             }
             StmtNode::FuncDef(id, body, used) => {
+                self.return_label(after);
                 let ret_tp = id.return_tp()?;
                 self.ret(&ret_tp)?;
                 emit_function(ir, id.to_string());
                 let tac_begin = TACInstruction::new(
-                    TACOperator::Begin(*used),
+                    TACOperator::Begin(*used + 4),
                     TACOperand::Null,
                     TACOperand::Null,
                     TACOperand::Null,
                 );
                 let tac_end = TACInstruction::new(
-                    TACOperator::End,
+                    TACOperator::End(*used + 4),
                     TACOperand::Null,
                     TACOperand::Null,
                     TACOperand::Null,
                 );
                 emit(ir, tac_begin);
-                //emit_label(ir, begin);
+                emit_label(ir, begin);
                 body.gen(ir, begin, after)?;
-                //emit_label(ir, after);
+                emit_label(ir, after);
                 emit(ir, tac_end);
             }
-            StmtNode::Return(expr) => match expr {
+            StmtNode::Return(return_label, expr) => match expr {
                 Some(e) => {
+                    let rl = return_label.borrow();
+                    if *rl == 0 {
+                        return Err(String::from("No return label found"));
+                    }
                     let return_value = e.reduce(ir)?;
-                    let tac = TACInstruction::new(
+                    let tac_return = TACInstruction::new(
                         TACOperator::Ret,
                         TACOperand::Null,
                         TACOperand::Null,
                         return_value.operand_to_tac()?,
                     );
-                    emit(ir, tac);
+                    let tac_goto = TACInstruction::new(
+                        TACOperator::Goto,
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        TACOperand::Label(*rl),
+                    );
+                    emit(ir, tac_return);
+                    emit(ir, tac_goto);
                 }
                 None => {
-                    let tac = TACInstruction::new(
+                    let rl = return_label.borrow();
+                    if *rl == 0 {
+                        return Err(String::from("No return label found"));
+                    }
+                    let tac_return = TACInstruction::new(
                         TACOperator::Ret,
                         TACOperand::Null,
                         TACOperand::Null,
                         TACOperand::Null,
                     );
-                    emit(ir, tac);
+                    let tac_goto = TACInstruction::new(
+                        TACOperator::Goto,
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        TACOperand::Label(*rl),
+                    );
+                    emit(ir, tac_return);
+                    emit(ir, tac_goto);
                 }
             },
             StmtNode::FuncCall(expr) => {
@@ -1363,6 +1386,26 @@ impl StmtNode {
         }
     }
 
+    fn return_label(&self, label: i64) {
+        match self {
+            StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
+                s1.return_label(label);
+                s2.return_label(label);
+            }
+            StmtNode::If(_, body) | StmtNode::While(_, body) | StmtNode::Do(_, body) => {
+                body.return_label(label);
+            }
+            StmtNode::FuncDef(_, body, _) => {
+                body.return_label(label);
+            }
+            StmtNode::Return(return_label, _) => {
+                let mut rl = return_label.borrow_mut();
+                *rl = label;
+            }
+            _ => (),
+        }
+    }
+
     fn ret(&self, tp: &Type) -> Result<(), String> {
         match self {
             StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
@@ -1373,7 +1416,7 @@ impl StmtNode {
             | StmtNode::If(_, body)
             | StmtNode::While(_, body)
             | StmtNode::Do(_, body) => body.ret(tp)?,
-            StmtNode::Return(expr) => match expr {
+            StmtNode::Return(_, expr) => match expr {
                 Some(e) => match Type::max_type(tp, e.tp()) {
                     Some(max_tp) => {
                         if max_tp != *tp {

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::inter::{ExprNode, StmtNode, Type};
 
@@ -19,7 +19,7 @@ pub enum TACOperator {
     Ret,
     Param,
     Begin(i32),
-    End,
+    End(i32),
     Goto,
     If,
     Iff,
@@ -48,7 +48,7 @@ impl fmt::Display for TACOperator {
             TACOperator::Ret => write!(f, "ret"),
             TACOperator::Param => write!(f, "param"),
             TACOperator::Begin(n) => write!(f, "begin {}", n),
-            TACOperator::End => write!(f, "end"),
+            TACOperator::End(_) => write!(f, "end"),
             TACOperator::Goto => write!(f, "goto"),
             TACOperator::If => write!(f, "if"),
             TACOperator::Iff => write!(f, "iffalse"),
@@ -140,9 +140,9 @@ impl fmt::Display for TACInstruction {
                 TACOperand::Null => write!(f, "\t{}", op),
                 _ => write!(f, "\t{} {}", op, res),
             },
-            TACOperator::Param => write!(f, "\t{} {}", op, res),
+            TACOperator::Param => write!(f, "\t{} {}", op, arg1),
             TACOperator::Begin(_) => write!(f, "\t{}", op),
-            TACOperator::End => write!(f, "\t{}", op),
+            TACOperator::End(_) => write!(f, "\t{}", op),
             TACOperator::Goto => write!(f, "\t{} {}", op, res),
             TACOperator::If | TACOperator::Iff => {
                 write!(f, "\t{} {} {} {}", op, arg1, TACOperator::Goto, res)
@@ -174,6 +174,12 @@ impl Deref for TACIr {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for TACIr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
