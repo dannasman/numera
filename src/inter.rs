@@ -405,7 +405,7 @@ impl ExprNode {
                 array.to_string(),
                 index.to_string(),
                 tp.to_owned(),
-                array.return_offset()?,
+                array.return_offset()?+4,
             )),
             _ => Err(format!(
                 "Failed to generate TAC from given expression {}",
@@ -1222,7 +1222,7 @@ impl StmtNode {
                         array.to_string(),
                         i.to_string(),
                         array.tp().to_owned(),
-                        array.return_offset()?,
+                        array.return_offset()?+4,
                     ),
                 );
                 emit(ir, tac);
