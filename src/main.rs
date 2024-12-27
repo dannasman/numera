@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader};
 
+mod codegen;
 mod inter;
 mod lexer;
 mod parser;
@@ -20,4 +21,8 @@ fn main() {
     let mut ir = tac::TACIr::new();
     parser.program(&mut ir).expect("Parsing program");
     println!("{}", ir);
+    let mut codegen = codegen::CodeGenerator::new();
+    let mut str = String::new();
+    codegen.program(&mut ir, &mut str).expect("Generating code");
+    println!("{}", str);
 }

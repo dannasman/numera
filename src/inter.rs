@@ -26,7 +26,12 @@ pub fn reset_labels() {
 }
 
 pub fn emit_label(ir: &mut TACIr, i: i64) {
-    let tac = TACInstruction::new(TACOperator::Null, TACOperand::Null, TACOperand::Null, TACOperand::Label(i));
+    let tac = TACInstruction::new(
+        TACOperator::Null,
+        TACOperand::Null,
+        TACOperand::Null,
+        TACOperand::Label(i),
+    );
     ir.push(tac)
 }
 
@@ -35,7 +40,7 @@ pub fn emit_function(ir: &mut TACIr, id: String) {
         TACOperator::Null,
         TACOperand::Null,
         TACOperand::Null,
-        TACOperand::Function(id)
+        TACOperand::Function(id),
     );
     ir.push(tac)
 }
@@ -49,7 +54,7 @@ pub fn emit_jumps(ir: &mut TACIr, test: TACOperand, t: i64, f: i64) {
         TACOperator::If,
         test.to_owned(),
         TACOperand::Null,
-        TACOperand::Label(t)
+        TACOperand::Label(t),
     );
     if t != 0 && f != 0 {
         emit(ir, tac_t);
@@ -57,7 +62,7 @@ pub fn emit_jumps(ir: &mut TACIr, test: TACOperand, t: i64, f: i64) {
             TACOperator::Goto,
             TACOperand::Null,
             TACOperand::Null,
-            TACOperand::Label(f)
+            TACOperand::Label(f),
         );
         emit(ir, tac_f);
     } else if t != 0 {
@@ -67,7 +72,7 @@ pub fn emit_jumps(ir: &mut TACIr, test: TACOperand, t: i64, f: i64) {
             TACOperator::Iff,
             test,
             TACOperand::Null,
-            TACOperand::Label(f)
+            TACOperand::Label(f),
         );
         emit(ir, tac_f);
     }
@@ -728,7 +733,7 @@ impl ExprNode {
                     TACOperator::Param,
                     TACOperand::Null,
                     TACOperand::Null,
-                    param.operand_to_tac()?
+                    param.operand_to_tac()?,
                 );
                 emit(ir, tac_param);
             }
@@ -736,7 +741,7 @@ impl ExprNode {
                 TACOperator::Call(count),
                 TACOperand::Null,
                 TACOperand::Null,
-                TACOperand::Function(id.to_string())
+                TACOperand::Function(id.to_string()),
             );
             emit(ir, tac_call);
             Ok(())
@@ -827,19 +832,19 @@ impl ExprNode {
                     TACOperator::Assign,
                     TACOperand::True,
                     TACOperand::Null,
-                    tmp.operand_to_tac()?
+                    tmp.operand_to_tac()?,
                 );
                 let tac_goto = TACInstruction::new(
                     TACOperator::Goto,
                     TACOperand::Null,
                     TACOperand::Null,
-                    TACOperand::Label(a)
+                    TACOperand::Label(a),
                 );
                 let tac_false = TACInstruction::new(
                     TACOperator::Assign,
                     TACOperand::False,
                     TACOperand::Null,
-                    tmp.operand_to_tac()?
+                    tmp.operand_to_tac()?,
                 );
                 emit(ir, tac_true);
                 emit(ir, tac_goto);
@@ -864,7 +869,7 @@ impl ExprNode {
                         op,
                         left.operand_to_tac()?,
                         right.operand_to_tac()?,
-                        tmp.operand_to_tac()?
+                        tmp.operand_to_tac()?,
                     ),
                     ExprNode::Unary(_, _, expr) => TACInstruction::new(
                         op,
@@ -902,7 +907,7 @@ impl ExprNode {
                         TACOperator::Param,
                         TACOperand::Null,
                         TACOperand::Null,
-                        param.operand_to_tac()?
+                        param.operand_to_tac()?,
                     );
                     emit(ir, tac_param);
                 }
@@ -1189,19 +1194,19 @@ impl StmtNode {
                         expr.operator_to_tac()?,
                         left.operand_to_tac()?,
                         right.operand_to_tac()?,
-                        id.operand_to_tac()?
+                        id.operand_to_tac()?,
                     ),
                     ExprNode::Unary(_, _, unary) => TACInstruction::new(
                         expr.operator_to_tac()?,
                         TACOperand::Null,
                         unary.operand_to_tac()?,
-                        id.operand_to_tac()?
+                        id.operand_to_tac()?,
                     ),
                     _ => TACInstruction::new(
                         TACOperator::Assign,
                         e.operand_to_tac()?,
                         TACOperand::Null,
-                        id.operand_to_tac()?
+                        id.operand_to_tac()?,
                     ),
                 };
                 emit(ir, tac);
@@ -1218,7 +1223,7 @@ impl StmtNode {
                         i.to_string(),
                         array.tp().to_owned(),
                         array.return_offset()?,
-                    )
+                    ),
                 );
                 emit(ir, tac);
             }
@@ -1250,7 +1255,7 @@ impl StmtNode {
                     TACOperator::Goto,
                     TACOperand::Null,
                     TACOperand::Null,
-                    TACOperand::Label(after)
+                    TACOperand::Label(after),
                 );
                 emit(ir, tac);
                 emit_label(ir, label_else);
@@ -1286,7 +1291,7 @@ impl StmtNode {
                     TACOperator::Goto,
                     TACOperand::Null,
                     TACOperand::Null,
-                    TACOperand::Label(*a)
+                    TACOperand::Label(*a),
                 );
                 emit(ir, tac);
             }
@@ -1298,18 +1303,18 @@ impl StmtNode {
                     TACOperator::Begin(*used),
                     TACOperand::Null,
                     TACOperand::Null,
-                    TACOperand::Null
+                    TACOperand::Null,
                 );
                 let tac_end = TACInstruction::new(
                     TACOperator::End,
                     TACOperand::Null,
                     TACOperand::Null,
-                    TACOperand::Null
+                    TACOperand::Null,
                 );
                 emit(ir, tac_begin);
-                emit_label(ir, begin);
+                //emit_label(ir, begin);
                 body.gen(ir, begin, after)?;
-                emit_label(ir, after);
+                //emit_label(ir, after);
                 emit(ir, tac_end);
             }
             StmtNode::Return(expr) => match expr {
@@ -1328,7 +1333,7 @@ impl StmtNode {
                         TACOperator::Ret,
                         TACOperand::Null,
                         TACOperand::Null,
-                        TACOperand::Null
+                        TACOperand::Null,
                     );
                     emit(ir, tac);
                 }

@@ -154,15 +154,16 @@ impl Parser {
             self.match_token(b'(')?;
             let mut params = Vec::<ExprNode>::new();
             let mut param_tps = Vec::<Type>::new();
+            let mut param_offset = -16;
             while self.look.match_tag(Tag::BASIC) {
                 let tp = self.tp()?;
                 param_tps.push(tp.to_owned());
                 let param_token = self.look.to_owned();
                 self.match_token(Tag::ID)?;
-                let id = ExprNode::new_id(param_token, &tp, self.used as i32);
+                let id = ExprNode::new_id(param_token, &tp, param_offset);
                 params.push(id.to_owned());
                 self.top.put(&id.to_string(), id)?;
-                self.used += tp.width() as i64;
+                param_offset -= 8;
                 if self.look.match_tag(b',') {
                     self.next()?;
                 }

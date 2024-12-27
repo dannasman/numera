@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt;
 use std::ops::Deref;
 
@@ -93,10 +94,10 @@ impl fmt::Display for TACOperand {
 
 #[derive(Debug, Clone)]
 pub struct TACInstruction {
-    op: TACOperator,
-    arg1: TACOperand,
-    arg2: TACOperand,
-    res: TACOperand,
+    pub op: TACOperator,
+    pub arg1: TACOperand,
+    pub arg2: TACOperand,
+    pub res: TACOperand,
 }
 
 impl TACInstruction {
@@ -105,7 +106,7 @@ impl TACInstruction {
             op,
             arg1,
             arg2,
-            res
+            res,
         }
     }
 }
@@ -152,20 +153,24 @@ impl fmt::Display for TACInstruction {
     }
 }
 
-pub struct TACIr(Vec<TACInstruction>);
+pub struct TACIr(VecDeque<TACInstruction>);
 
 impl TACIr {
     pub fn new() -> Self {
-        TACIr(Vec::<TACInstruction>::new())
+        TACIr(VecDeque::<TACInstruction>::new())
     }
 
     pub fn push(&mut self, tac: TACInstruction) {
-        self.0.push(tac);
+        self.0.push_back(tac);
+    }
+
+    pub fn pop(&mut self) -> Option<TACInstruction> {
+        self.0.pop_front()
     }
 }
 
 impl Deref for TACIr {
-    type Target = Vec<TACInstruction>;
+    type Target = VecDeque<TACInstruction>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
