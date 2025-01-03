@@ -308,12 +308,30 @@ impl CodeGenerator {
                     Err(format!("Failed to allocate register for {}", s))
                 }
             }
-            TACOperand::Array(s, shift, tp, offset) => match self.get_reg(&shift) {
-                Some(reg) => {
-                    if offset > 0 {
-                        Ok(format!("{}(%rbp, {})", -offset, reg.to_string()))
-                    } else {
-                        Ok(format!("(%rbp, {})", reg.to_string()))
+            TACOperand::Array(s, shift, tp, offset) => match self.address_descriptor.get(&shift) {
+                Some(address) => {
+                    let address_offset = address.offset;
+                    match &address.reg {
+                        None => {
+                            if let Some(reg) = self.get_reg(&shift) {
+                                b.push_str(format!("\tmov {}(%rbp), {}\n", -address_offset, reg).as_str());
+                                if offset > 0 {
+                                    Ok(format!("{}(%rbp, {})", -offset, reg.to_string()))
+                                } else {
+                                    Ok(format!("(%rbp, {})", reg.to_string()))
+                                }
+                            } else {
+                                Ok(format!("{}(%rbp, {}(%rbp))", -offset, -address_offset))
+                            }
+                        }
+                        Some(reg) => {
+                            if offset > 0 {
+                                Ok(format!("{}(%rbp, {})", -offset, reg.to_string()))
+                            } else {
+                                Ok(format!("(%rbp, {})", reg.to_string()))
+                            }
+
+                        }
                     }
                 }
                 None => Err(format!("Failed to allocate register for {}", shift)),
@@ -323,6 +341,7 @@ impl CodeGenerator {
         }
     }
 
+    // TODO: korjaa funktioihin liittyvä -4(%rbp) kikkailu
     pub fn program(&mut self, ir: &mut TACIr, b: &mut String) -> Result<(), String> {
         self.allocate_temps(ir);
 
@@ -347,6 +366,7 @@ impl CodeGenerator {
                     }
                     b.push_str("\tret\n");
                     self.clear_regs();
+                    self.address_descriptor.clear();
                 }
                 TACOperator::Assign => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
@@ -454,6 +474,7 @@ impl CodeGenerator {
                             b.push_str(format!("\tmov %rax, {}\n", res_code).as_str());
                         }
                     }
+                    self.clear_regs();
                 }
                 TACOperator::Ret => match tac.res {
                     TACOperand::Null => (),

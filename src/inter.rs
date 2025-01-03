@@ -398,7 +398,11 @@ impl ExprNode {
         match self {
             ExprNode::Constant(op, tp) => Ok(TACOperand::Const(op.to_string(), tp.to_owned())),
             ExprNode::Id(op, tp, offset) => {
-                Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset + 4))
+                if *offset < 0 {
+                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
+                } else {
+                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset + 4))
+                }
             }
             ExprNode::Temp(_, tp, num) => Ok(TACOperand::Temp(format!("t{}", num), tp.to_owned())),
             ExprNode::Access(_, array, index, tp) => Ok(TACOperand::Array(

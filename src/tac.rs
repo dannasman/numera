@@ -113,7 +113,6 @@ impl TACInstruction {
 
 impl fmt::Display for TACInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //Token::Token(tag) => write!(f, "{}", *tag as char),
         let op = &self.op;
         let arg1 = &self.arg1;
         let arg2 = &self.arg2;
