@@ -105,7 +105,6 @@ impl Token {
         Token::BasicType(String::from("char"), Tag::BASIC, 8u8)
     }
 
-
     // TODO: 1-byte offset for bools
     pub fn bool() -> Token {
         Token::BasicType(String::from("bool"), Tag::BASIC, 8u8)

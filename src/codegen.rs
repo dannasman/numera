@@ -288,7 +288,9 @@ impl CodeGenerator {
                     match &address.reg {
                         None => {
                             if let Some(reg) = self.get_reg(&shift) {
-                                b.push_str(format!("\tmov {}(%rbp), {}\n", -address_offset, reg).as_str());
+                                b.push_str(
+                                    format!("\tmov {}(%rbp), {}\n", -address_offset, reg).as_str(),
+                                );
                                 if offset > 0 {
                                     Ok(format!("{}(%rbp, {})", -offset, reg.to_string()))
                                 } else {
@@ -304,7 +306,6 @@ impl CodeGenerator {
                             } else {
                                 Ok(format!("(%rbp, {})", reg.to_string()))
                             }
-
                         }
                     }
                 }
@@ -479,7 +480,7 @@ impl CodeGenerator {
                             b.push_str(format!("\tmov %rax, {}\n", res_code).as_str());
                         }
                     }
-                    b.push_str(format!("\tadd ${}, %rsp\n", 8*n).as_str());
+                    b.push_str(format!("\tadd ${}, %rsp\n", 8 * n).as_str());
                     self.clear_regs();
                 }
                 TACOperator::Ret => match tac.res {

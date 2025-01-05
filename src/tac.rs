@@ -82,7 +82,7 @@ impl TACOperand {
             TACOperand::Array(_, _, tp, _) => Ok(tp),
             TACOperand::Temp(_, tp) => Ok(tp),
             TACOperand::Const(_, tp) => Ok(tp),
-            _ => Err(format!("Operand {} has no type", self))
+            _ => Err(format!("Operand {} has no type", self)),
         }
     }
 }
