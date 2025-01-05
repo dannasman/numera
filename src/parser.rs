@@ -201,9 +201,9 @@ impl Parser {
             let token = self.look.to_owned();
             self.match_token(Tag::ID)?;
             self.match_token(b';')?;
+            self.used += tp.width() as i64;
             let id = ExprNode::new_id(token, &tp, self.used as i32);
             self.top.put(&id.to_string(), id)?;
-            self.used += tp.width() as i64;
         }
         Ok(())
     }

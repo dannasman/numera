@@ -398,10 +398,10 @@ impl ExprNode {
         match self {
             ExprNode::Constant(op, tp) => Ok(TACOperand::Const(op.to_string(), tp.to_owned())),
             ExprNode::Id(op, tp, offset) => {
-                if *offset < 0 {
+                if *offset <= 0 {
                     Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
                 } else {
-                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset + 4))
+                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
                 }
             }
             ExprNode::Temp(_, tp, num) => Ok(TACOperand::Temp(format!("t{}", num), tp.to_owned())),
@@ -409,7 +409,7 @@ impl ExprNode {
                 array.to_string(),
                 index.to_string(),
                 tp.to_owned(),
-                array.return_offset()?+4,
+                array.return_offset()?,
             )),
             _ => Err(format!(
                 "Failed to generate TAC from given expression {}",
@@ -1226,7 +1226,7 @@ impl StmtNode {
                         array.to_string(),
                         i.to_string(),
                         array.tp().to_owned(),
-                        array.return_offset()?+4,
+                        array.return_offset()?,
                     ),
                 );
                 emit(ir, tac);
@@ -1305,13 +1305,13 @@ impl StmtNode {
                 self.ret(&ret_tp)?;
                 emit_function(ir, id.to_string());
                 let tac_begin = TACInstruction::new(
-                    TACOperator::Begin(*used + 4),
+                    TACOperator::Begin(*used),
                     TACOperand::Null,
                     TACOperand::Null,
                     TACOperand::Null,
                 );
                 let tac_end = TACInstruction::new(
-                    TACOperator::End(*used + 4),
+                    TACOperator::End(*used),
                     TACOperand::Null,
                     TACOperand::Null,
                     TACOperand::Null,

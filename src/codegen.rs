@@ -10,9 +10,9 @@ enum Register {
     RAX, // for return values
     RBP, // for local variables
     RSP, // stack pointer
-    RBX,
-    RCX,
-    RDX,
+    RBX, // has to be preserved
+    RCX, // reserved
+    RDX, // reserved
     RSI,
     RDI,
     R8,
@@ -20,9 +20,9 @@ enum Register {
     R10,
     R11,
     R12,
-    R13,
-    R14,
-    R15,
+    R13, // has to bepreserved
+    R14, // has to be preserved
+    R15, // has to be preserved
 }
 
 impl fmt::Display for Register {
@@ -49,9 +49,9 @@ impl fmt::Display for Register {
 }
 
 static GENERAL_REGISTERS: &'static [Register] = &[
-    Register::RBX,
-    Register::RCX,
-    Register::RDX,
+    //Register::RBX,
+    //Register::RCX,
+    //Register::RDX,
     Register::RSI,
     Register::RDI,
     Register::R8,
@@ -59,9 +59,9 @@ static GENERAL_REGISTERS: &'static [Register] = &[
     Register::R10,
     Register::R11,
     Register::R12,
-    Register::R13,
-    Register::R14,
-    Register::R15,
+    //Register::R13,
+    //Register::R14,
+    //Register::R15,
 ];
 
 #[derive(Debug, Clone)]
@@ -154,32 +154,6 @@ impl IndexMut<&Register> for RegisterDescriptor {
         }
     }
 }
-
-/*
-pub fn get_reg(val: TACOperand) -> Result<Register, &'static str> {
-    let mut registers = unsafe { REGISTER_DESCRIPTOR.lock().unwrap() };
-    let begin = 3;
-    let end = registers.len();
-
-    let mut i = 3;
-    let mut j = registers.len();
-    while i < registers.len() {
-        if let Some(id) = &registers[i].1 {
-            if id.to_string() == val.to_string() {
-                return Ok(registers[i].0.to_owned());
-            }
-        } else {
-            j = i;
-        }
-    }
-
-    if j < registers.len() {
-        registers[j].1 = Some(val);
-        Ok(registers[j].0.to_owned())
-    } else {
-        Err("Failed to get register")
-    }
-}*/
 
 pub fn align_stack(n: i32) -> Result<i32, String> {
     if n > 0 {
@@ -345,6 +319,8 @@ impl CodeGenerator {
     pub fn program(&mut self, ir: &mut TACIr, b: &mut String) -> Result<(), String> {
         self.allocate_temps(ir);
 
+        b.push_str(".global main\n");
+
         while let Some(tac) = ir.pop() {
             match tac.op {
                 TACOperator::Null => {
@@ -371,14 +347,17 @@ impl CodeGenerator {
                 TACOperator::Assign => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Add => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
-                    b.push_str(format!("\tadd {}, {}\n", arg2_code, res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tadd %rcx, %rdx\n");
+                    b.push_str(format!("\tmov %rdx, {}\n", res_code).as_str());
                 }
                 TACOperator::Sub => {
                     let arg1_code = match tac.arg1 {
@@ -387,69 +366,95 @@ impl CodeGenerator {
                     };
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
-                    b.push_str(format!("\tsub {}, {}\n", arg2_code, res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
+                    b.push_str(format!("\tsub %rdx, {}\n", res_code).as_str());
                 }
                 TACOperator::Div => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str("\tpush %rdx\n");
                     b.push_str("\tmov $0, %rdx\n");
                     b.push_str(format!("\tmov {}, %rax\n", arg1_code).as_str());
                     b.push_str("\tcqo\n");
-                    b.push_str(format!("\tidiv {}\n", arg2_code).as_str());
+                    b.push_str(format!("\tidivq {}\n", arg2_code).as_str());
                     b.push_str(format!("\tmov %rax, {}\n", res_code).as_str());
-                    b.push_str("\tpop %rdx\n");
                 }
                 TACOperator::Mul => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
-                    b.push_str(format!("\timul {}, {}\n", arg2_code, res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\timul %rcx, %rdx\n");
+                    b.push_str(format!("\tmov %rdx, {}\n", res_code).as_str());
                 }
                 TACOperator::Gt => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsetg {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsetg %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Lt => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsetl {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsetl %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Ge => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsetge {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsetge %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Le => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsetle {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsetle %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Eql => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsete {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsete %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Ne => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let arg2_code = self.arg_code(tac.arg2, b)?;
                     let res_code = self.arg_code(tac.res, b)?;
-                    b.push_str(format!("\tcmp {}, {}\n", arg1_code, arg2_code).as_str());
-                    b.push_str(format!("\tsetne {}\n", res_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rdx\n", arg2_code).as_str());
+                    b.push_str("\tcmpq %rdx, %rcx\n");
+                    b.push_str("\tsetne %al\n");
+                    b.push_str("\tmovzx %al, %rcx\n");
+                    b.push_str(format!("\tmov %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::And => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
@@ -465,7 +470,7 @@ impl CodeGenerator {
                     b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
                     b.push_str(format!("\tor {}, {}\n", arg2_code, res_code).as_str());
                 }
-                TACOperator::Call(_) => {
+                TACOperator::Call(n) => {
                     b.push_str(format!("\tcall {}\n", tac.arg1).as_str());
                     match tac.res {
                         TACOperand::Null => (),
@@ -474,6 +479,7 @@ impl CodeGenerator {
                             b.push_str(format!("\tmov %rax, {}\n", res_code).as_str());
                         }
                     }
+                    b.push_str(format!("\tadd ${}, %rsp\n", 8*n).as_str());
                     self.clear_regs();
                 }
                 TACOperator::Ret => match tac.res {
@@ -493,13 +499,15 @@ impl CodeGenerator {
                 TACOperator::If => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let res_code = tac.res.to_string();
-                    b.push_str(format!("\ttest {}, {}\n", arg1_code, arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str("\ttest %rcx, %rcx\n");
                     b.push_str(format!("\tjne {}\n", res_code).as_str());
                 }
                 TACOperator::Iff => {
                     let arg1_code = self.arg_code(tac.arg1, b)?;
                     let res_code = tac.res.to_string();
-                    b.push_str(format!("\ttest {}, {}\n", arg1_code, arg1_code).as_str());
+                    b.push_str(format!("\tmov {}, %rcx\n", arg1_code).as_str());
+                    b.push_str("\ttest %rcx, %rcx\n");
                     b.push_str(format!("\tje {}\n", res_code).as_str());
                 }
                 TACOperator::Not => {
@@ -508,7 +516,6 @@ impl CodeGenerator {
                     b.push_str(format!("\tmov {}, {}\n", arg1_code, res_code).as_str());
                     b.push_str(format!("\txor $1, {}\n", res_code).as_str());
                 }
-                _ => (),
             }
         }
         Ok(())

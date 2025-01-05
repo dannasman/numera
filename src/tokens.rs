@@ -84,27 +84,31 @@ impl Token {
     }
 
     pub fn ttrue() -> Token {
-        Token::Word(String::from("true"), Tag::TRUE)
+        Token::Word(String::from("1"), Tag::TRUE)
     }
 
     pub fn tfalse() -> Token {
-        Token::Word(String::from("false"), Tag::FALSE)
+        Token::Word(String::from("0"), Tag::FALSE)
     }
 
     pub fn temp() -> Token {
         Token::Word(String::from("temp"), Tag::TEMP)
     }
 
+    // TODO: 4-byte offset for integers
     pub fn int() -> Token {
-        Token::BasicType(String::from("int"), Tag::BASIC, 4u8)
+        Token::BasicType(String::from("int"), Tag::BASIC, 8u8)
     }
 
+    // TODO: 1-byte offset for chars
     pub fn char() -> Token {
-        Token::BasicType(String::from("char"), Tag::BASIC, 1u8)
+        Token::BasicType(String::from("char"), Tag::BASIC, 8u8)
     }
 
+
+    // TODO: 1-byte offset for bools
     pub fn bool() -> Token {
-        Token::BasicType(String::from("bool"), Tag::BASIC, 1u8)
+        Token::BasicType(String::from("bool"), Tag::BASIC, 8u8)
     }
 
     pub fn float() -> Token {

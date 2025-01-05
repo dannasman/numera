@@ -18,13 +18,13 @@ fn main() {
     let lexer = lexer::Lexer::new(reader);
     let mut parser = parser::Parser::new(lexer).expect("Creating parser");
 
-    println!("================TAC================");
+    //println!("================TAC================");
 
     let mut ir = tac::TACIr::new();
     parser.program(&mut ir).expect("Parsing program");
-    println!("{}", ir);
+    //println!("{}", ir);
 
-    println!("================asm================");
+    //println!("================asm================");
 
     let mut codegen = codegen::CodeGenerator::new();
     let mut str = String::new();

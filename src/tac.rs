@@ -75,6 +75,18 @@ pub enum TACOperand {
     Null,
 }
 
+impl TACOperand {
+    pub fn tp(&self) -> Result<&Type, String> {
+        match self {
+            TACOperand::Var(_, tp, _) => Ok(tp),
+            TACOperand::Array(_, _, tp, _) => Ok(tp),
+            TACOperand::Temp(_, tp) => Ok(tp),
+            TACOperand::Const(_, tp) => Ok(tp),
+            _ => Err(format!("Operand {} has no type", self))
+        }
+    }
+}
+
 impl fmt::Display for TACOperand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //Token::Token(tag) => write!(f, "{}", *tag as char),
