@@ -20,7 +20,7 @@ enum Register {
     R10,
     R11,
     R12,
-    R13, // has to bepreserved
+    R13, // has to be preserved
     R14, // has to be preserved
     R15, // has to be preserved
 }
@@ -297,7 +297,8 @@ impl CodeGenerator {
                                     Ok(format!("(%rbp, {})", reg.to_string()))
                                 }
                             } else {
-                                Ok(format!("{}(%rbp, {}(%rbp))", -offset, -address_offset))
+                                b.push_str(format!("\tmov {}(%rbp), %rax\n", -address_offset).as_str());
+                                Ok(format!("{}(%rbp, %rax)", -offset))
                             }
                         }
                         Some(reg) => {
