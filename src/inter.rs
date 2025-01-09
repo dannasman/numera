@@ -222,6 +222,12 @@ impl Type {
             Type::Void => 0,
         }
     }
+    pub fn element_tp(&self) -> &Type {
+        match self {
+            Type::Array { of, tag: _, length } => of.element_tp(),
+            _ => self,
+        }
+    }
 
     pub fn is_numeric(&self) -> bool {
         if let Type::Basic {
@@ -408,7 +414,7 @@ impl ExprNode {
             ExprNode::Access(_, array, index, tp) => Ok(TACOperand::Array(
                 array.to_string(),
                 index.to_string(),
-                tp.to_owned(),
+                array.tp().to_owned(),
                 array.return_offset()?,
             )),
             _ => Err(format!(
