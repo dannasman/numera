@@ -294,20 +294,8 @@ pub fn arg_tp(arg: &TACOperand) -> Result<&Type, String> {
         TACOperand::Temp(_, tp) => Ok(tp),
         TACOperand::Array(_, _, tp, _) => Ok(tp),
         TACOperand::Const(_, tp) => Ok(tp),
+        TACOperand::Function(_, tp) => Ok(tp),
         _ => Err(format!("Can get type of {}", arg)),
-    }
-}
-
-pub fn use_float_registers(tp: &Type) -> bool {
-    match tp.token() {
-        Token::BasicType(lexeme, _, _) => {
-            if lexeme == "float" {
-                true
-            } else {
-                false
-            }
-        }
-        _ => false,
     }
 }
 
@@ -468,28 +456,6 @@ impl CodeGenerator {
         self.constants
             .push_str(format!("\t.long {}\n", bits >> 32).as_str());
         res
-    }
-
-    pub fn find_reg(&mut self, val: &String, tp: Type) -> bool {
-        if use_float_registers(&tp) {
-            for reg in FLOAT_REGISTERS {
-                if let Some(s) = &self.register_descriptor[reg] {
-                    if s == val {
-                        return true;
-                    }
-                }
-            }
-            false
-        } else {
-            for reg in GENERAL_REGISTERS {
-                if let Some(s) = &self.register_descriptor[reg] {
-                    if s == val {
-                        return true;
-                    }
-                }
-            }
-            false
-        }
     }
 
     pub fn allocate_temps(&mut self, ir: &mut TACIr) {
@@ -678,52 +644,74 @@ impl CodeGenerator {
                     self.address_descriptor.clear();
                 }
                 TACOperator::Assign => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let scratch_left = scratch_left(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let mov_code = mov(res_tp)?;
+                    let scratch_left = scratch_left(res_tp)?;
 
-                    let arg1_code = self.arg_code(&tac.arg1, b)?;
+                    let mut arg1_code = self.arg_code(&tac.arg1, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
+                    if res_tp == &Type::float() && arg1_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
                     b.push_str(format!("\t{} {}, {}\n", mov_code, scratch_left, res_code).as_str());
                 }
                 TACOperator::Add => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let add_code = add(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
 
-                    let arg1_code = self.arg_code(&tac.arg1, b)?;
-                    let arg2_code = self.arg_code(&tac.arg2, b)?;
+                    let mov_code = mov(res_tp)?;
+                    let add_code = add(res_tp)?;
+                    let scratch_left = scratch_left(res_tp)?;
+                    let scratch_right = scratch_right(res_tp)?;
+
+                    let mut arg1_code = self.arg_code(&tac.arg1, b)?;
+                    let mut arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if res_tp == &Type::float() && arg1_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if res_tp == &Type::float() && arg2_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", add_code, scratch_right, scratch_left).as_str(),
                     );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, scratch_left, res_code).as_str(),
-                    );
+                    b.push_str(format!("\t{} {}, {}\n", mov_code, scratch_left, res_code).as_str());
                 }
                 TACOperator::Sub => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let sub_code = sub(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+
+                    let mov_code = mov(res_tp)?;
+                    let sub_code = sub(res_tp)?;
+                    let scratch_left = scratch_left(res_tp)?;
+                    let scratch_right = scratch_right(res_tp)?;
 
                     let arg1_code = match tac.arg1 {
                         TACOperand::Null => {
-                            if use_float_registers(tp) {
+                            if arg1_tp == &Type::float() {
                                 let l = self.const_float(String::from("0.0"));
                                 format!(".LC{}(%rip)", l)
                             } else {
@@ -734,56 +722,104 @@ impl CodeGenerator {
                     };
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+
+                    if res_tp == &Type::float() && arg1_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if res_tp == &Type::float() && arg2_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", sub_code, scratch_right, scratch_left).as_str(),
                     );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, scratch_left, res_code).as_str(),
-                    );
+                    b.push_str(format!("\t{} {}, {}\n", mov_code, scratch_left, res_code).as_str());
                 }
                 TACOperator::Div => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let div_code = div(tp)?;
-                    let scratch_ret = scratch_ret(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+
+                    let mov_code = mov(res_tp)?;
+                    let div_code = div(res_tp)?;
+                    let scratch_ret = scratch_ret(res_tp)?;
+                    let scratch_left = scratch_left(res_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    if !use_float_registers(tp) {
+                    if res_tp != &Type::float() {
                         b.push_str("\tmovq $0, %rdx\n");
                     }
-                    b.push_str(format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_ret).as_str());
-                    if !use_float_registers(tp) {
+
+                    if res_tp == &Type::float() && arg1_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_ret).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_ret).as_str(),
+                        );
+                    }
+
+                    if res_tp != &Type::float() {
                         b.push_str("\tcqo\n");
                     }
-                    b.push_str(format!("\t{} {}\n", div_code, arg2_code).as_str());
+                    if res_tp == &Type::float() && arg2_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\t{} {}\n", div_code, scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
+                        );
+                        b.push_str(format!("\t{} {}\n", div_code, scratch_left).as_str());
+                    }
                     b.push_str(format!("\t{} {}, {}\n", mov_code, scratch_ret, res_code).as_str());
                 }
                 TACOperator::Mul => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let mul_code = mul(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+
+                    let mov_code = mov(res_tp)?;
+                    let mul_code = mul(res_tp)?;
+                    let scratch_left = scratch_left(res_tp)?;
+                    let scratch_right = scratch_right(res_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if res_tp == &Type::float() && arg1_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if res_tp == &Type::float() && arg2_tp != res_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", mul_code, scratch_left, scratch_right).as_str(),
                     );
@@ -792,22 +828,39 @@ impl CodeGenerator {
                     );
                 }
                 TACOperator::Gt => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -816,22 +869,39 @@ impl CodeGenerator {
                     b.push_str(format!("\tmovq %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Lt => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -840,22 +910,39 @@ impl CodeGenerator {
                     b.push_str(format!("\tmovq %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Ge => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -864,22 +951,39 @@ impl CodeGenerator {
                     b.push_str(format!("\tmovq %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Le => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -888,22 +992,39 @@ impl CodeGenerator {
                     b.push_str(format!("\tmovq %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Eql => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -912,22 +1033,39 @@ impl CodeGenerator {
                     b.push_str(format!("\tmovq %rcx, {}\n", res_code).as_str());
                 }
                 TACOperator::Ne => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let cmp_code = cmp(tp)?;
-                    let scratch_left = scratch_left(tp)?;
-                    let scratch_right = scratch_right(tp)?;
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let arg2_tp = arg_tp(&tac.arg2)?;
+                    let cmp_tp = match Type::max_type(arg1_tp, arg2_tp) {
+                        Some(tp) => tp,
+                        None => arg1_tp.to_owned(),
+                    };
+                    let mov_code = mov(&cmp_tp)?;
+                    let cmp_code = cmp(&cmp_tp)?;
+                    let scratch_left = scratch_left(&cmp_tp)?;
+                    let scratch_right = scratch_right(&cmp_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
                     let arg2_code = self.arg_code(&tac.arg2, b)?;
                     let res_code = self.arg_code(&tac.res, b)?;
 
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
-                    );
-                    b.push_str(
-                        format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
-                    );
+                    if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                        );
+                    }
+
+                    if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
+                        b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                    } else {
+                        b.push_str(
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                        );
+                    }
+
                     b.push_str(
                         format!("\t{} {}, {}\n", cmp_code, scratch_left, scratch_right).as_str(),
                     );
@@ -950,47 +1088,66 @@ impl CodeGenerator {
                     b.push_str(format!("\tor {}, {}\n", arg2_code, res_code).as_str());
                 }
                 TACOperator::Call(n) => {
-                    let tp = arg_tp(&tac.res)?;
-                    let mov_code = mov(tp)?;
-                    let scratch_ret = scratch_ret(tp)?;
+                    let res_tp = arg_tp(&tac.res)?;
+                    let mov_code = mov(res_tp)?;
+                    let res_ret = scratch_ret(res_tp)?;
 
                     b.push_str(format!("\tcall {}\n", tac.arg1).as_str());
                     match tac.res {
                         TACOperand::Null => (),
                         _ => {
+                            let arg1_tp = arg_tp(&tac.arg1)?;
+                            let arg1_ret = scratch_ret(arg1_tp)?;
                             let res_code = self.arg_code(&tac.res, b)?;
+                            if res_tp == &Type::float() && arg1_tp != res_tp {
+                                b.push_str(
+                                    format!("\tcvtsi2sdq {}, {}\n", arg1_ret, res_code).as_str(),
+                                );
+                            } else {
+                                b.push_str(
+                                    format!("\t{} {}, {}\n", mov_code, res_ret, res_code).as_str(),
+                                );
+                            }
+                        }
+                    }
+                    b.push_str(format!("\taddq ${}, %rsp\n", 8 * n).as_str());
+                    self.clear_regs();
+                }
+                TACOperator::Ret(ret_tp) => match tac.res {
+                    TACOperand::Null => (),
+                    _ => {
+                        let res_tp = arg_tp(&tac.res)?;
+                        let mov_code = mov(&ret_tp)?;
+                        let scratch_ret = scratch_ret(&ret_tp)?;
+
+                        let res_code = self.arg_code(&tac.res, b)?;
+
+                        if &ret_tp == &Type::float() && res_tp != &ret_tp {
+                            b.push_str(format!("\tmovq {}, %rax\n", res_code).as_str());
+                            b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_ret).as_str());
+                        } else {
                             b.push_str(
-                                format!("\t{} {}, {}\n", mov_code, scratch_ret, res_code).as_str(),
+                                format!("\t{} {}, {}\n", mov_code, res_code, scratch_ret).as_str(),
                             );
                         }
                     }
-                    b.push_str(format!("\taddq ${}, %rsp\n", tp.width() as i64 * n).as_str());
-                    self.clear_regs();
-                }
-                TACOperator::Ret => match tac.res {
-                    TACOperand::Null => (),
-                    _ => {
-                        let tp = arg_tp(&tac.res)?;
-                        let mov_code = mov(tp)?;
-                        let scratch_ret = scratch_ret(tp)?;
-
-                        let res_code = self.arg_code(&tac.res, b)?;
-                        b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, res_code, scratch_ret).as_str(),
-                        );
-                    }
                 },
-                TACOperator::Param => {
-                    let tp = arg_tp(&tac.arg1)?;
-                    let mov_code = mov(tp)?;
-                    let scratch_ret = scratch_ret(tp)?;
+                TACOperator::Param(param_tp) => {
+                    let arg1_tp = arg_tp(&tac.arg1)?;
+                    let mov_code = mov(&param_tp)?;
+                    let scratch_ret = scratch_ret(&param_tp)?;
 
                     let arg1_code = self.arg_code(&tac.arg1, b)?;
 
-                    if use_float_registers(tp) {
-                        b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_ret).as_str(),
-                        );
+                    if &param_tp == &Type::float() {
+                        if arg1_tp != &param_tp {
+                            b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
+                            b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_ret).as_str());
+                        } else {
+                            b.push_str(
+                                format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_ret).as_str(),
+                            );
+                        }
                         b.push_str("\tleaq -8(%rsp), %rsp\n");
                         b.push_str(format!("\t{} {}, (%rsp)\n", mov_code, scratch_ret).as_str());
                     } else {

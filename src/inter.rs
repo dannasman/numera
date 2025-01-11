@@ -35,12 +35,12 @@ pub fn emit_label(ir: &mut TACIr, i: i64) {
     ir.push(tac)
 }
 
-pub fn emit_function(ir: &mut TACIr, id: String) {
+pub fn emit_function(ir: &mut TACIr, id: String, tp: Type) {
     let tac = TACInstruction::new(
         TACOperator::Null,
         TACOperand::Null,
         TACOperand::Null,
-        TACOperand::Function(id),
+        TACOperand::Function(id, tp),
     );
     ir.push(tac)
 }
@@ -222,10 +222,21 @@ impl Type {
             Type::Void => 0,
         }
     }
+
     pub fn element_tp(&self) -> &Type {
         match self {
             Type::Array { of, tag: _, length } => of.element_tp(),
             _ => self,
+        }
+    }
+
+    pub fn param_tps(&self) -> Result<Vec<Type>, String> {
+        match self {
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => Ok(param_tps.to_owned()),
+            _ => Err(String::from("Failed to get parameter types")),
         }
     }
 
@@ -336,7 +347,7 @@ pub enum ExprNode {
     Not(Token, Type, Box<ExprNode>),
     Or(Token, Type, Box<ExprNode>, Box<ExprNode>),
     And(Token, Type, Box<ExprNode>, Box<ExprNode>),
-    FuncCall(Token, Type, Vec<Box<ExprNode>>),
+    FuncCall(Token, Type, Vec<Box<ExprNode>>, Vec<Type>),
 }
 
 impl ExprNode {
@@ -352,7 +363,7 @@ impl ExprNode {
             ExprNode::Not(op, _, _) => op,
             ExprNode::Or(op, _, _, _) => op,
             ExprNode::And(op, _, _, _) => op,
-            ExprNode::FuncCall(op, _, _) => op,
+            ExprNode::FuncCall(op, _, _, _) => op,
         }
     }
 
@@ -368,7 +379,7 @@ impl ExprNode {
             ExprNode::Not(_, tp, _) => tp,
             ExprNode::Or(_, tp, _, _) => tp,
             ExprNode::And(_, tp, _, _) => tp,
-            ExprNode::FuncCall(_, tp, _) => tp,
+            ExprNode::FuncCall(_, tp, _, _) => tp,
         }
     }
 
@@ -711,7 +722,12 @@ impl ExprNode {
                     return Err(String::from("Type Error"));
                 }
                 let funccall_tp = *return_tp.to_owned();
-                Ok(ExprNode::FuncCall(id, funccall_tp, params))
+                Ok(ExprNode::FuncCall(
+                    id,
+                    funccall_tp,
+                    params,
+                    param_tps.to_owned(),
+                ))
             }
             _ => Err(String::from("Type Error")),
         }
@@ -727,7 +743,7 @@ impl ExprNode {
     }
 
     pub fn void_funccall(&self, ir: &mut TACIr) -> Result<(), String> {
-        if let ExprNode::FuncCall(id, tp, params) = self {
+        if let ExprNode::FuncCall(id, tp, params, param_tps) = self {
             if *tp != Type::Void {
                 return Err(String::from("Type Error"));
             }
@@ -738,20 +754,26 @@ impl ExprNode {
                 params_reduced.push(expr);
                 count += 1;
             }
-            for param in params_reduced {
-                let tac_param = TACInstruction::new(
-                    TACOperator::Param,
-                    param.operand_to_tac()?,
-                    TACOperand::Null,
-                    TACOperand::Null,
-                );
-                emit(ir, tac_param);
-            }
+
+            //TODO: parempi vaihtoehto unwrapille
+            params_reduced
+                .into_iter()
+                .zip(param_tps.into_iter())
+                .for_each(|(r, ptp)| {
+                    let tac_param = TACInstruction::new(
+                        TACOperator::Param(ptp.to_owned()),
+                        r.operand_to_tac().unwrap(),
+                        TACOperand::Null,
+                        TACOperand::Null,
+                    );
+                    emit(ir, tac_param);
+                });
+
             let tac_call = TACInstruction::new(
                 TACOperator::Call(count),
                 TACOperand::Null,
                 TACOperand::Null,
-                TACOperand::Function(id.to_string()),
+                TACOperand::Function(id.to_string(), Type::Void),
             );
             emit(ir, tac_call);
             Ok(())
@@ -863,7 +885,7 @@ impl ExprNode {
                 emit_label(ir, a);
                 Ok(Box::new(tmp))
             }
-            ExprNode::FuncCall(_, _, _) => self.reduce(ir),
+            ExprNode::FuncCall(_, _, _, _) => self.reduce(ir),
             _ => Ok(self.box_clone()),
         }
     }
@@ -904,7 +926,7 @@ impl ExprNode {
                 emit(ir, tac);
                 Ok(Box::new(tmp))
             }
-            ExprNode::FuncCall(id, tp, params) => {
+            ExprNode::FuncCall(id, tp, params, param_tps) => {
                 let mut count = 0;
                 let mut params_reduced = Vec::<Box<ExprNode>>::new();
                 for param in params.into_iter().rev() {
@@ -912,19 +934,25 @@ impl ExprNode {
                     params_reduced.push(expr);
                     count += 1;
                 }
-                for param in params_reduced {
-                    let tac_param = TACInstruction::new(
-                        TACOperator::Param,
-                        param.operand_to_tac()?,
-                        TACOperand::Null,
-                        TACOperand::Null,
-                    );
-                    emit(ir, tac_param);
-                }
+
+                //TODO: parempi vaihtoehto unwrapille
+                params_reduced
+                    .into_iter()
+                    .zip(param_tps.into_iter())
+                    .for_each(|(r, ptp)| {
+                        let tac_param = TACInstruction::new(
+                            TACOperator::Param(ptp.to_owned()),
+                            r.operand_to_tac().unwrap(),
+                            TACOperand::Null,
+                            TACOperand::Null,
+                        );
+                        emit(ir, tac_param);
+                    });
+
                 let tmp = ExprNode::new_temp(tp);
                 let tac_call = TACInstruction::new(
                     TACOperator::Call(count),
-                    TACOperand::Function(id.to_string()),
+                    TACOperand::Function(id.to_string(), tp.to_owned()),
                     TACOperand::Null,
                     tmp.operand_to_tac()?,
                 );
@@ -974,8 +1002,8 @@ impl Clone for ExprNode {
                 left.box_clone(),
                 right.box_clone(),
             ),
-            ExprNode::FuncCall(id, tp, params) => {
-                ExprNode::FuncCall(id.clone(), tp.clone(), params.clone())
+            ExprNode::FuncCall(id, tp, params, param_tps) => {
+                ExprNode::FuncCall(id.clone(), tp.clone(), params.clone(), param_tps.clone())
             }
         }
     }
@@ -1010,7 +1038,7 @@ pub enum StmtNode {
     Do(Box<ExprNode>, Box<StmtNode>),
     Break(Rc<RefCell<i64>>),
     FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
-    Return(Rc<RefCell<i64>>, Option<Box<ExprNode>>),
+    Return(Rc<RefCell<i64>>, Option<Box<ExprNode>>, Rc<RefCell<Type>>),
     FuncCall(Box<ExprNode>),
 }
 
@@ -1176,7 +1204,11 @@ impl StmtNode {
     }
 
     pub fn new_return(expr: Option<Box<ExprNode>>) -> StmtNode {
-        StmtNode::Return(Rc::new(RefCell::new(0)), expr)
+        StmtNode::Return(
+            Rc::new(RefCell::new(0)),
+            expr,
+            Rc::new(RefCell::new(Type::Void)),
+        )
     }
 
     pub fn box_return(expr: Option<Box<ExprNode>>) -> Box<StmtNode> {
@@ -1185,7 +1217,7 @@ impl StmtNode {
 
     pub fn new_funccall(expr: Box<ExprNode>) -> Result<StmtNode, String> {
         match *expr {
-            ExprNode::FuncCall(_, _, _) => Ok(StmtNode::FuncCall(expr)),
+            ExprNode::FuncCall(_, _, _, _) => Ok(StmtNode::FuncCall(expr)),
             _ => Err(String::from("Type Error")),
         }
     }
@@ -1309,7 +1341,7 @@ impl StmtNode {
                 self.return_label(after);
                 let ret_tp = id.return_tp()?;
                 self.ret(&ret_tp)?;
-                emit_function(ir, id.to_string());
+                emit_function(ir, id.to_string(), ret_tp);
                 let tac_begin = TACInstruction::new(
                     TACOperator::Begin(*used),
                     TACOperand::Null,
@@ -1328,15 +1360,16 @@ impl StmtNode {
                 emit_label(ir, after);
                 emit(ir, tac_end);
             }
-            StmtNode::Return(return_label, expr) => match expr {
+            StmtNode::Return(return_label, expr, tp) => match expr {
                 Some(e) => {
                     let rl = return_label.borrow();
                     if *rl == 0 {
                         return Err(String::from("No return label found"));
                     }
+                    let rtp = tp.borrow();
                     let return_value = e.reduce(ir)?;
                     let tac_return = TACInstruction::new(
-                        TACOperator::Ret,
+                        TACOperator::Ret(rtp.to_owned()),
                         TACOperand::Null,
                         TACOperand::Null,
                         return_value.operand_to_tac()?,
@@ -1356,7 +1389,7 @@ impl StmtNode {
                         return Err(String::from("No return label found"));
                     }
                     let tac_return = TACInstruction::new(
-                        TACOperator::Ret,
+                        TACOperator::Ret(Type::Void),
                         TACOperand::Null,
                         TACOperand::Null,
                         TACOperand::Null,
@@ -1408,7 +1441,7 @@ impl StmtNode {
             StmtNode::FuncDef(_, body, _) => {
                 body.return_label(label);
             }
-            StmtNode::Return(return_label, _) => {
+            StmtNode::Return(return_label, _, _) => {
                 let mut rl = return_label.borrow_mut();
                 *rl = label;
             }
@@ -1426,12 +1459,14 @@ impl StmtNode {
             | StmtNode::If(_, body)
             | StmtNode::While(_, body)
             | StmtNode::Do(_, body) => body.ret(tp)?,
-            StmtNode::Return(_, expr) => match expr {
+            StmtNode::Return(_, expr, return_tp) => match expr {
                 Some(e) => match Type::max_type(tp, e.tp()) {
                     Some(max_tp) => {
                         if max_tp != *tp {
                             return Err(String::from("Type error"));
                         }
+                        let mut rtp = return_tp.borrow_mut();
+                        *rtp = tp.to_owned();
                     }
                     None => return Err(String::from("Type error")),
                 },
