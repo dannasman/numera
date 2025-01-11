@@ -1,11 +1,11 @@
-mod lexer;
-mod parser;
-mod inter;
-mod runtime;
-mod tac;
+pub mod codegen;
+pub mod inter;
+pub mod lexer;
+pub mod parser;
+pub mod tokens;
 
-pub use self::lexer::{Lex, Token};
-pub use self::parser::{Expr};
+pub use self::codegen;
 pub use self::inter;
-pub use self::runtime;
-pub use self::tac;
+pub use self::lexer;
+pub use self::parser;
+pub use self::tokens;

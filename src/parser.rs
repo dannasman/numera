@@ -1,1304 +1,539 @@
-use super::inter::{
-    Access, And, Arith, Break, Call, Constant, Else, ExprUnion, Function, FunctionCall, Id, If,
-    Not, Or, Rel, Return, Seq, Set, SetElem, StmtUnion, Unary, While,
-};
-use super::lexer::{Array, Lexer, Token};
-use super::runtime::ActivationRecord;
-use super::tac::*;
-
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::convert::Into;
+use std::mem::swap;
+
+use super::inter::*;
+use super::lexer::Lexer;
+use super::tac::TACIr;
+use super::tokens::{Tag, Token};
+
+const OPEN_BR: u32 = b'{' as u32;
+const SEMICOLON: u32 = b';' as u32;
+const IF: u32 = Tag::IF as u32;
+const WHILE: u32 = Tag::WHILE as u32;
+const DO: u32 = Tag::DO as u32;
+const BREAK: u32 = Tag::BREAK as u32;
+const LT: u32 = b'<' as u32;
+const GT: u32 = b'>' as u32;
+const LE: u32 = Tag::LE as u32;
+const GE: u32 = Tag::GE as u32;
+const MINUS: u32 = b'-' as u32;
+const EXCL: u32 = b'!' as u32;
+const OPAREN: u32 = b'(' as u32;
+const NUM: u32 = Tag::NUM as u32;
+const REAL: u32 = Tag::REAL as u32;
+const TRUE: u32 = Tag::TRUE as u32;
+const FALSE: u32 = Tag::FALSE as u32;
+const ID: u32 = Tag::ID as u32;
+const DEFINE: u32 = Tag::DEFINE as u32;
+const RETURN: u32 = Tag::RETURN as u32;
+const VOID: u32 = Tag::VOID as u32;
+const BASIC: u32 = Tag::BASIC as u32;
+const EOF: u32 = Tag::EOF as u32;
+
+pub struct Env {
+    table: HashMap<String, ExprNode>,
+    prev: Box<Option<Env>>,
+}
+
+impl Env {
+    fn empty() -> Box<Env> {
+        Box::new(Env {
+            table: HashMap::new(),
+            prev: Box::new(None),
+        })
+    }
+
+    fn new(prev: Box<Env>) -> Box<Env> {
+        Box::new(Env {
+            table: HashMap::new(),
+            prev: Box::new(Some(*prev)),
+        })
+    }
+
+    fn pop(&mut self) -> Result<Box<Env>, String> {
+        let mut res = Box::new(None);
+        swap(&mut self.prev, &mut res);
+        match *res {
+            Some(env) => Ok(Box::new(env)),
+            None => Err(String::from("Popping empty environment")),
+        }
+    }
+
+    fn put(&mut self, key: &str, value: ExprNode) -> Result<(), String> {
+        if value.is_id() {
+            self.table.insert(String::from(key), value);
+            Ok(())
+        } else {
+            Err(String::from(
+                "Only id expressions can be added to symbol table",
+            ))
+        }
+    }
+
+    fn get(&self, key: &str) -> Result<ExprNode, String> {
+        if let Some(value) = self.table.get(key) {
+            Ok(value.to_owned())
+        } else if let Some(env) = self.prev.as_ref() {
+            env.get(key)
+        } else {
+            Err(format!("Undeclared id {}", key))
+        }
+    }
+}
 
 pub struct Parser {
-    enclosing_stmt: Rc<RefCell<Option<StmtUnion>>>,
-    declarations: Vec<StmtUnion>,
-    label: Rc<RefCell<u32>>,
-    lexer: Lexer,
-    symbol_table: HashMap<String, Id>,
-    activation_record_table: HashMap<String, ActivationRecord>,
-    //activation_record_stack: Vec<ActivationRecord>,
-    temp_count: Rc<RefCell<u32>>,
-    used: u32,
+    lex: Lexer,
+    look: Token,
+    top: Box<Env>,
+    functions: Vec<StmtNode>,
+    used: i64,
 }
 
 impl Parser {
-    pub fn new(lexer: Lexer) -> Self {
-        Parser {
-            enclosing_stmt: Rc::new(RefCell::new(None)),
-            declarations: Vec::new(),
-            label: Rc::new(RefCell::new(0)),
-            lexer,
-            symbol_table: HashMap::new(),
-            activation_record_table: HashMap::new(),
-            //activation_record_stack: Vec::new(),
-            temp_count: Rc::new(RefCell::new(0)),
+    pub fn new(lex: Lexer) -> Result<Parser, String> {
+        let mut res = Parser {
+            lex,
+            look: Token::Eof,
+            top: Env::empty(),
+            functions: Vec::new(),
             used: 0,
-        }
+        };
+        res.next()?;
+        Ok(res)
     }
 
-    pub fn get_line(&mut self) -> u32 {
-        if let Some(line) = self.lexer.lines.pop_front() {
-            line
-        } else {
-            0
+    pub fn program(&mut self, ir: &mut TACIr) -> Result<(), String> {
+        self.function()?;
+        for function in &self.functions {
+            let begin = new_label();
+            let after = new_label();
+            function.gen(ir, begin, after)?;
         }
+        /*let stmt = self.block()?;
+        let begin = new_label();
+        let after = new_label();
+        emit_label(s, begin);
+        stmt.gen(s, begin, after)?;
+        emit_label(s, after);*/
+        Ok(())
     }
 
-    pub fn program(&mut self, input: &str, tac_ir: TACState) {
-        self.lexer.lex(input);
-
-        let stmt = self.block();
-        if let Some(s) = stmt {
-            let mut l = self.label.borrow_mut();
-            *l += 1;
-            let begin = *l;
-            *l += 1;
-            let after = *l;
-            drop(l);
-
-            self.declarations.iter().for_each(|s| {
-                s.gen_tac(tac_ir.clone(), begin, after);
-            });
-
-            s.emit_label(tac_ir.clone(), begin);
-            s.gen_tac(tac_ir.clone(), begin, after);
-            s.emit_label(tac_ir.clone(), after);
-        }
+    fn next(&mut self) -> Result<(), String> {
+        self.look = match self.lex.scan() {
+            Ok(token) => token,
+            Err(err) => return Err(format!("{} near line {}", err, self.lex.line)),
+        };
+        Ok(())
     }
 
-    fn block(&mut self) -> Option<StmtUnion> {
-        let mut t = self.lexer.tokens.pop_front();
-        let mut line = self.get_line();
-        if let Some(Token::Lcb(_)) = t {
-        } else {
-            panic!("Error at line {}: Token did not match {{", line);
+    fn match_token<U: Into<u32>>(&mut self, tag: U) -> Result<(), String> {
+        if !self.look.match_tag(tag) {
+            return Err(format!(
+                "Syntax error near line {}, ({})",
+                self.lex.line, self.look
+            ));
         }
-
-        //save symbol table related to current scope
-        let saved_symbol_table = self.symbol_table.clone();
-
-        let stmt = self.stmts();
-        t = self.lexer.tokens.pop_front();
-        line = self.get_line();
-        if let Some(Token::Rcb(_)) = t {
-        } else {
-            panic!("Error at line {}: token did not match }}", line);
-        }
-
-        //set saved symbol table
-        self.symbol_table = saved_symbol_table;
-        stmt
+        self.next()
     }
 
-    fn stmts(&mut self) -> Option<StmtUnion> {
-        let t = self.lexer.tokens.front();
-        match t {
-            Some(token) => match token {
-                Token::Rcb(_) => None,
-                _ => {
-                    let stmt1 = self.stmt();
-                    let stmt2 = self.stmts();
-                    let seq =
-                        StmtUnion::Seq(Rc::new(Seq::new(Rc::clone(&self.label), stmt1, stmt2)));
-                    Some(seq)
+    fn function(&mut self) -> Result<(), String> {
+        while !self.look.match_tag(EOF) {
+            self.match_token(DEFINE)?;
+            let tp = match self.look.tag() {
+                BASIC => self.tp()?,
+                VOID => {
+                    let tp = Type::new(self.look.to_owned())?;
+                    self.next()?;
+                    tp
                 }
-            },
-            None => None,
-        }
-    }
-
-    fn stmt(&mut self) -> Option<StmtUnion> {
-        let t = self.lexer.tokens.front();
-        match t {
-            Some(token) => match token {
-                Token::Scol(_) => {
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    None
+                _ => return Err(format!("Syntax error near line {}", self.lex.line)),
+            };
+            let id_token = self.look.to_owned();
+            self.match_token(Tag::ID)?;
+            self.match_token(b'(')?;
+            let mut params = Vec::<ExprNode>::new();
+            let mut param_tps = Vec::<Type>::new();
+            let mut param_offset = -16;
+            while self.look.match_tag(Tag::BASIC) {
+                let tp = self.tp()?;
+                param_tps.push(tp.to_owned());
+                let param_token = self.look.to_owned();
+                self.match_token(Tag::ID)?;
+                let id = ExprNode::new_id(param_token, &tp, param_offset);
+                params.push(id.to_owned());
+                self.top.put(&id.to_string(), id)?;
+                param_offset -= 8;
+                if self.look.match_tag(b',') {
+                    self.next()?;
                 }
-                Token::Lcb(_) => self.block(),
-                Token::Id(s) => {
-                    if s == "break" {
-                        self.lexer.tokens.pop_front();
-                        let line = self.get_line();
-
-                        let next_t = self.lexer.tokens.pop_front();
-                        self.get_line();
-                        if let Some(Token::Scol(_)) = next_t {
-                            let enclosing = self.enclosing_stmt.borrow().to_owned();
-                            match Break::new(enclosing) {
-                                Ok(new_break) => {
-                                    let break_stmt = StmtUnion::Break(Rc::new(new_break));
-                                    Some(break_stmt)
-                                }
-                                Err(s) => {
-                                    panic!("Error at line {}: {}", line, s);
-                                }
-                            }
-                        } else {
-                            panic!("Error at line {}: token did not match ;", line);
-                        }
-                    } else {
-                        self.assign()
-                    }
-                }
-                Token::If(_) => {
-                    self.lexer.tokens.pop_front();
-                    let line = self.get_line();
-                    let mut next_t = self.lexer.tokens.pop_front();
-                    self.get_line();
-                    if let Some(Token::Lrb(_)) = next_t {
-                    } else {
-                        panic!("Error at line {}: token did not match (", line);
-                    }
-
-                    let expr = self.boolean();
-
-                    next_t = self.lexer.tokens.pop_front();
-                    self.get_line();
-                    if let Some(Token::Rrb(_)) = next_t {
-                    } else {
-                        panic!("Error at line {}: token did not match )", line);
-                    }
-
-                    let stmt1 = self.stmt();
-
-                    let peek = self.lexer.tokens.front();
-                    match peek {
-                        Some(next) => {
-                            if let Token::Else(_) = next {
-                                self.lexer.tokens.pop_front();
-                                self.get_line();
-                                let stmt2 = self.stmt();
-                                match stmt1 {
-                                    Some(s1) => match stmt2 {
-                                        Some(s2) => match expr {
-                                            Some(x) => {
-                                                let else_stmt =
-                                                    Else::new(Rc::clone(&self.label), x, s1, s2);
-                                                match else_stmt {
-                                                    Ok(s) => Some(StmtUnion::Else(Rc::new(s))),
-                                                    Err(e) => {
-                                                        panic!("Error at line {}: {}", line, e);
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                panic!(
-                                                    "Error at line {}: missing expression",
-                                                    line
-                                                );
-                                            }
-                                        },
-                                        None => None,
-                                    },
-                                    None => None,
-                                }
-                            } else {
-                                match stmt1 {
-                                    Some(s1) => match expr {
-                                        Some(x) => {
-                                            let if_stmt = If::new(Rc::clone(&self.label), x, s1);
-                                            match if_stmt {
-                                                Ok(s) => Some(StmtUnion::If(Rc::new(s))),
-                                                Err(e) => {
-                                                    panic!("Error at line {}: {}", line, e);
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            panic!("Error at line {}: missing expression", line);
-                                        }
-                                    },
-                                    None => None,
-                                }
-                            }
-                        }
-                        None => None,
-                    }
-                }
-                Token::While(_) => {
-                    self.lexer.tokens.pop_front();
-                    let while_line = self.get_line();
-                    let while_cell = Rc::new(RefCell::new(0));
-                    let while_stmt = StmtUnion::While(Rc::new(RefCell::new(While::new(
-                        Rc::clone(&self.label),
-                        Rc::clone(&while_cell),
-                    ))));
-
-                    let enclosing_read = self.enclosing_stmt.borrow().to_owned();
-                    let mut enclosing_write = self.enclosing_stmt.borrow_mut();
-                    *enclosing_write = Some(StmtUnion::While(Rc::new(RefCell::new(While::new(
-                        Rc::clone(&self.label),
-                        Rc::clone(&while_cell),
-                    )))));
-                    drop(enclosing_write);
-
-                    let mut next_t = self.lexer.tokens.pop_front();
-                    self.get_line();
-                    if let Some(Token::Lrb(_)) = next_t {
-                    } else {
-                        panic!("Error at line {}: token did not match (", while_line);
-                    }
-                    let expr = self.boolean();
-                    next_t = self.lexer.tokens.pop_front();
-                    self.get_line();
-                    if let Some(Token::Rrb(_)) = next_t {
-                    } else {
-                        panic!("Error at line {}: token did not match )", while_line);
-                    }
-
-                    let stmt = self.stmt();
-
-                    match while_stmt {
-                        StmtUnion::While(ws) => {
-                            if let Err(e) = ws.borrow_mut().init(expr, stmt) {
-                                panic!("Error at line {}: {}", while_line, e);
-                            }
-                            let mut enclosing_write = self.enclosing_stmt.borrow_mut();
-                            *enclosing_write = enclosing_read;
-                            drop(enclosing_write);
-                            Some(StmtUnion::While(ws))
-                        }
-                        _ => {
-                            panic!(
-                                "Error at line {}: failed to initialize while statement",
-                                while_line
-                            );
-                        }
-                    }
-                }
-                Token::Def(_) => {
-                    self.lexer.tokens.pop_front();
-                    let function_line = self.get_line();
-                    if let Some(tp @ Token::Int(_))
-                    | Some(tp @ Token::Float(_))
-                    | Some(tp @ Token::Bool(_))
-                    | Some(tp @ Token::Void(_)) = self.lexer.tokens.pop_front()
-                    {
-                        self.get_line();
-                        if let Some(Token::Id(id_s)) = self.lexer.tokens.pop_front() {
-                            self.get_line();
-                            if self.symbol_table.get_mut(&id_s).is_some() {
-                                panic!(
-                                    "Error at line {}: function {} already declared",
-                                    function_line, id_s
-                                );
-                            } else {
-                                let id =
-                                    Id::new(tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
-
-                                // TODO: evaluate necessity of this
-                                /*
-                                match tp.get_width() {
-                                    Ok(w) => self.used += w,
-                                    Err(e) => panic!("Error at line {}: {}", function_line, e),
-                                }
-                                */
-
-                                self.symbol_table.insert(id_s.to_owned(), id.clone());
-                                self.get_line();
-                                if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
-                                } else {
-                                    panic!(
-                                        "Error at line {}: token did not match (",
-                                        function_line
-                                    );
-                                }
-                                let params = self.params();
-                                self.get_line();
-                                if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
-                                } else {
-                                    panic!(
-                                        "Error at line {}: token did not match )",
-                                        function_line
-                                    );
-                                }
-
-                                let saved_symbol_table = self.symbol_table.clone();
-
-                                params.iter().for_each(|p| {
-                                    self.symbol_table
-                                        .insert(p.token.to_owned().value_to_string(), p.clone());
-                                });
-
-                                self.get_line();
-                                if let Some(Token::Lcb(_)) = self.lexer.tokens.pop_front() {
-                                } else {
-                                    panic!(
-                                        "Error at line {}: token did not match {{",
-                                        function_line
-                                    );
-                                }
-
-                                self.activation_record_table.insert(
-                                    id_s.to_owned(),
-                                    ActivationRecord::new(tp, params.to_owned()),
-                                );
-
-                                let stmt = self.stmts();
-
-                                self.get_line();
-                                if let Some(Token::Rcb(_)) = self.lexer.tokens.pop_front() {
-                                } else {
-                                    panic!(
-                                        "Error at line {}: token did not match }}",
-                                        function_line
-                                    );
-                                }
-
-                                self.symbol_table = saved_symbol_table;
-
-                                let function_stmt =
-                                    StmtUnion::Function(Rc::new(Function::new(id_s, params, stmt)));
-                                self.declarations.push(function_stmt);
-                                None
-                            }
-                        } else {
-                            panic!("Error at line {}: failed to define function due to missing function name", function_line)
-                        }
-                    } else {
-                        panic!("Error at line {}: failed to define function due to missing function type", function_line);
-                    }
-                }
-                Token::Return(_) => {
-                    self.lexer.tokens.pop_front();
-                    let return_line = self.get_line();
-
-                    if let Some(Token::Scol(_)) = self.lexer.tokens.front() {
-                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(None)));
-                        Some(return_stmt)
-                    } else {
-                        let expr = self.expr();
-
-                        self.get_line();
-                        if let Some(Token::Scol(_)) = self.lexer.tokens.pop_front() {
-                        } else {
-                            panic!("Error at line {}: token did not match ;", return_line);
-                        }
-
-                        self.get_line();
-                        if let Some(Token::Rcb(_)) = self.lexer.tokens.front() {
-                        } else {
-                            panic!(
-                                "Error at line {}: body should end after return",
-                                return_line
-                            );
-                        }
-
-                        let return_stmt = StmtUnion::Return(Rc::new(Return::new(expr)));
-                        Some(return_stmt)
-                    }
-                }
-                _ => self.assign(),
-            },
-            None => None,
-        }
-    }
-
-    fn params(&mut self) -> Vec<Id> {
-        let params_line = self.get_line();
-        let mut params_vec: Vec<Id> = Vec::new();
-        while let Some(tp @ Token::Int(_))
-        | Some(tp @ Token::Float(_))
-        | Some(tp @ Token::Bool(_)) = self.lexer.tokens.front()
-        {
-            let param_tp = tp.to_owned();
-            self.lexer.tokens.pop_front();
-            self.get_line();
-            if let Some(Token::Id(id_s)) = self.lexer.tokens.front() {
-                let id_string = id_s.to_owned();
-                self.lexer.tokens.pop_front();
-                self.get_line();
-                if self.symbol_table.get_mut(&id_string).is_some() {
-                    panic!(
-                        "Error at line {}: parameter {} already declared",
-                        params_line, id_string
-                    );
-                } else {
-                    let id = Id::new(param_tp, Token::Id(id_string), self.used);
-                    params_vec.push(id);
-                }
-            } else {
-                panic!("Error at line {}: missing parameter name", params_line);
             }
+            self.match_token(b')')?;
+            let func_tp = Type::function(Box::new(tp), param_tps);
+            let func_id = ExprNode::new_id(id_token, &func_tp, self.used as i32);
+            self.top.put(&func_id.to_string(), func_id.to_owned())?;
+            let stmt = self.block()?;
+            let func_stmt = StmtNode::FuncDef(Box::new(func_id), stmt, self.used as i32);
+            self.functions.push(func_stmt);
+            self.used = 0;
         }
-        params_vec
+        Ok(())
     }
 
-    fn dims(&mut self, tp: Token) -> Token {
-        let size;
+    fn block(&mut self) -> Result<Box<StmtNode>, String> {
+        self.match_token(b'{')?;
+
+        let mut empty = Env::empty();
+        swap(&mut self.top, &mut empty);
+        self.top = Env::new(empty);
+
+        self.decls()?;
+        let stmts = self.stmts()?;
+        self.match_token(b'}')?;
+
+        self.top = self.top.pop()?;
+        Ok(stmts)
+    }
+
+    fn decls(&mut self) -> Result<(), String> {
+        while self.look.match_tag(Tag::BASIC) {
+            let tp = self.tp()?;
+            let token = self.look.to_owned();
+            self.match_token(Tag::ID)?;
+            self.match_token(b';')?;
+            self.used += tp.width() as i64;
+            let id = ExprNode::new_id(token, &tp, self.used as i32);
+            self.top.put(&id.to_string(), id)?;
+        }
+        Ok(())
+    }
+
+    fn tp(&mut self) -> Result<Type, String> {
+        let tp = Type::new(self.look.to_owned())?;
+        self.match_token(Tag::BASIC)?;
+        if !self.look.match_tag(b'[') {
+            return Ok(tp);
+        }
+        self.dims(tp)
+    }
+
+    fn dims(&mut self, tp: Type) -> Result<Type, String> {
+        self.match_token(b'[')?;
+        let token = self.look.to_owned();
+        self.match_token(Tag::NUM)?;
+        let size = match token {
+            Token::Num(val) => val,
+            _ => return Err(format!("Syntax error near line {}", self.lex.line)),
+        };
+        self.match_token(b']')?;
+
         let mut of = tp.to_owned();
-
-        let mut t = self.lexer.tokens.pop_front();
-        let line = self.get_line();
-        if let Some(Token::Lsb(_)) = t {
-        } else {
-            panic!("Error at line {}: token did not match [", line);
+        if self.look.match_tag(b'[') {
+            of = self.dims(tp)?;
         }
-
-        t = self.lexer.tokens.pop_front();
-        self.get_line();
-        if let Some(Token::Num(i)) = t {
-            size = i
-        } else {
-            panic!("Error at line {}: index must be integer", line);
-        }
-
-        t = self.lexer.tokens.pop_front();
-        self.get_line();
-        if let Some(Token::Rsb(_)) = t {
-        } else {
-            panic!("Error at line {}: token did not match ]", line);
-        }
-
-        if let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
-            of = self.dims(tp);
-        }
-        match of.get_width() {
-            Ok(w) => Token::Arr(Array::new(size, of, w)),
-            Err(e) => {
-                panic!("Error at line {}: {}", line, e)
-            }
-        }
+        Ok(Type::array(of, size as u32))
     }
-    fn assign(&mut self) -> Option<StmtUnion> {
-        let mut t = self.lexer.tokens.pop_front();
-        let mut line = self.get_line();
-        match t {
-            Some(tp @ Token::Int(_)) | Some(tp @ Token::Float(_)) | Some(tp @ Token::Bool(_)) => {
-                t = self.lexer.tokens.pop_front();
-                self.get_line();
-                if let Some(Token::Id(id_s)) = t {
-                    if let Some(Token::Asgn(_)) = self.lexer.tokens.front() {
-                        self.lexer.tokens.pop_front();
-                        line = self.get_line();
-                        if self.symbol_table.get_mut(&id_s).is_some() {
-                            panic!("Error at line {}: variable {} already declared", line, id_s);
-                        }
 
-                        let id = Id::new(tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
-                        match tp.get_width() {
-                            Ok(w) => self.used += w,
-                            Err(e) => panic!("Error at line {}: {}", line, e),
-                        }
+    fn stmts(&mut self) -> Result<Box<StmtNode>, String> {
+        if self.look.match_tag(b'}') {
+            return Ok(StmtNode::box_null());
+        }
+        let head = self.stmt()?;
+        let tail = self.stmts()?;
+        Ok(StmtNode::box_seq(head, tail))
+    }
 
-                        let expr = self.boolean();
-                        self.symbol_table.insert(id_s, id.clone());
-                        match expr {
-                            Some(x) => {
-                                let set_stmt = Set::new(id, x);
-                                match set_stmt {
-                                    Ok(set) => {
-                                        t = self.lexer.tokens.pop_front();
-                                        self.get_line();
-                                        if let Some(Token::Scol(_)) = t {
-                                        } else {
-                                            panic!("Error at line {}: token did not match ;", line);
-                                        }
-                                        Some(StmtUnion::Set(Rc::new(set)))
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            }
-                            None => {
-                                panic!("Error at line {}: expression missing", line);
-                            }
-                        }
-                    } else {
-                        let array_tp = self.dims(tp);
-                        let id =
-                            Id::new(array_tp.to_owned(), Token::Id(id_s.to_owned()), self.used);
-                        match array_tp.get_width() {
-                            Ok(w) => self.used += w,
-                            Err(e) => panic!("Error at line {}: {}", line, e),
-                        }
-                        self.symbol_table.insert(id_s, id);
-
-                        t = self.lexer.tokens.pop_front();
-                        self.get_line();
-                        if let Some(Token::Scol(_)) = t {
-                        } else {
-                            panic!("Error at line {}: token did not match ;", line);
-                        }
-                        None
-                    }
-                } else {
-                    panic!("Error at line {}: variable name missing", line);
+    fn stmt(&mut self) -> Result<Box<StmtNode>, String> {
+        match self.look.tag() {
+            SEMICOLON => {
+                self.next()?;
+                Ok(StmtNode::box_null())
+            }
+            IF => {
+                self.match_token(IF)?;
+                self.match_token(b'(')?;
+                let expr = self.boolean()?;
+                self.match_token(b')')?;
+                let body = self.stmt()?;
+                if !self.look.match_tag(Tag::ELSE) {
+                    let if_stmt = StmtNode::box_if(expr, body)?;
+                    return Ok(if_stmt);
                 }
+                self.match_token(Tag::ELSE)?;
+                let false_stmt = self.stmt()?;
+                let else_stmt = StmtNode::box_else(expr, body, false_stmt)?;
+                Ok(else_stmt)
             }
-            Some(Token::Id(id_s)) => {
-                let symbol = self.symbol_table.get_mut(&id_s);
-                match symbol {
-                    Some(sym) => {
-                        let id = sym.to_owned();
-                        match self.lexer.tokens.front() {
-                            Some(Token::Asgn(_)) => {
-                                self.lexer.tokens.pop_front();
-                                self.get_line();
-                                let expr = self.boolean();
-                                match expr {
-                                    Some(x) => {
-                                        let set_stmt = Set::new(id, x);
-                                        match set_stmt {
-                                            Ok(set) => {
-                                                t = self.lexer.tokens.pop_front();
-                                                self.get_line();
-                                                if let Some(Token::Scol(_)) = t {
-                                                } else {
-                                                    panic!(
-                                                        "Error at line {}: token did not match ;",
-                                                        line
-                                                    );
-                                                }
-                                                Some(StmtUnion::Set(Rc::new(set)))
-                                            }
-                                            Err(e) => {
-                                                panic!("Error at line {}: {}", line, e);
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        panic!("Error at line {}: expression missing", line);
-                                    }
-                                }
-                            }
-                            Some(Token::Lsb(_)) => {
-                                let access = self.offset(id);
-                                t = self.lexer.tokens.pop_front();
-                                self.get_line();
-                                if let Some(Token::Asgn(_)) = t {
-                                    let expr = self.boolean();
-                                    match expr {
-                                        Some(x) => {
-                                            let set_stmt = SetElem::new(access, x);
-                                            match set_stmt {
-                                                Ok(set) => {
-                                                    t = self.lexer.tokens.pop_front();
-                                                    self.get_line();
-                                                    if let Some(Token::Scol(_)) = t {
-                                                    } else {
-                                                        panic!(
-                                                                "Error at line {}: token did not match ;",
-                                                                line
-                                                            );
-                                                    }
-                                                    Some(StmtUnion::SetElem(Rc::new(set)))
-                                                }
-                                                Err(e) => {
-                                                    panic!("Error at line {}: {}", line, e);
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            panic!("Error at line {}: expression missing", line);
-                                        }
-                                    }
-                                } else {
-                                    panic!("Error at line {}: token did not match =", line);
-                                }
-                            }
-                            Some(Token::Lrb(_)) => {
-                                if let Some(ar) = self.activation_record_table.get_mut(&id_s) {
-                                    let activation_record = ar.to_owned();
-                                    let func_id = sym.to_owned();
-                                    let args: Vec<ExprUnion> = self.args();
+            WHILE => {
+                self.match_token(WHILE)?;
+                self.match_token(b'(')?;
 
-                                    if !activation_record
-                                        .params
-                                        .iter()
-                                        .zip(args.iter())
-                                        .all(|(p, a)| p.tp == a.get_type())
-                                    {
-                                        panic!("Error at line {}: argument types did not match function parameter types", line);
-                                    }
-
-                                    let call_expr =
-                                        Call::new(func_id, args, Rc::clone(&self.temp_count));
-
-                                    let call_stmt = FunctionCall::new(call_expr);
-                                    match call_stmt {
-                                        Ok(call) => Some(StmtUnion::FunctionCall(Rc::new(call))),
-                                        Err(e) => panic!("Error at line {}: {}", line, e),
-                                    }
-                                } else {
-                                    panic!("Error at line {}: function not declared", line);
-                                }
-                            }
-                            _ => panic!("Error at line {}: invalid assign statement", line),
-                        }
-                    }
-                    None => {
-                        panic!("Error at line {}: type of {} missing", line, id_s);
-                    }
+                let expr = self.boolean()?;
+                if *expr.tp() != Type::bool() {
+                    return Err(String::from("Boolean required in while"));
                 }
+
+                self.match_token(b')')?;
+                let body = self.stmt()?;
+                let while_stmt = StmtNode::box_while(expr, body)?;
+                Ok(while_stmt)
             }
-            _ => {
-                panic!("Error at line {}: assign failed", line);
+            DO => {
+                self.match_token(DO)?;
+                let body = self.stmt()?;
+
+                self.match_token(WHILE)?;
+                self.match_token(b'(')?;
+                let expr = self.boolean()?;
+                if *expr.tp() != Type::bool() {
+                    return Err(String::from("Boolean required in do"));
+                }
+                self.match_token(b')')?;
+                self.match_token(b';')?;
+                let do_stmt = StmtNode::box_do(expr, body)?;
+                Ok(do_stmt)
             }
+            BREAK => {
+                self.match_token(BREAK)?;
+                self.match_token(b';')?;
+                let break_stmt = StmtNode::box_break();
+                Ok(break_stmt)
+            }
+            RETURN => {
+                self.match_token(RETURN)?;
+                let reuturn_stmt = match self.look.tag() {
+                    SEMICOLON => StmtNode::box_return(None),
+                    _ => {
+                        let expr = self.boolean()?;
+                        StmtNode::box_return(Some(expr))
+                    }
+                };
+                self.match_token(b';')?;
+                Ok(reuturn_stmt)
+            }
+            OPEN_BR => self.block(),
+            _ => self.assign(),
         }
     }
 
-    fn boolean(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.join();
-        while let Some(Token::Or(_)) = self.lexer.tokens.front() {
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.join();
-                    match expr2 {
-                        Some(x2) => {
-                            let or = Or::new(
-                                Rc::clone(&self.label),
-                                Rc::clone(&self.temp_count),
-                                x1,
-                                x2,
-                            );
-                            match or {
-                                Ok(o) => {
-                                    expr1 = Some(ExprUnion::Or(Rc::new(o)));
-                                }
-                                Err(e) => {
-                                    panic!("Error at line {}: {}", line, e);
-                                }
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => {
-                    expr1 = None;
-                }
-            }
+    /*
+
+                   let tok = id.op().to_owned();
+                   let tp = id.tp().to_owned();
+                   let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
+                   return Ok(funccall)
+    * */
+    fn assign(&mut self) -> Result<Box<StmtNode>, String> {
+        let token = self.look.to_owned();
+        self.match_token(Tag::ID)?;
+
+        let id = self.top.get(&token.to_string())?;
+
+        if self.look.match_tag(b'=') {
+            self.next()?;
+            let expr = self.boolean()?;
+            let stmt = StmtNode::box_set(Box::new(id), expr)?;
+            self.match_token(b';')?;
+            return Ok(stmt);
+        } else if self.look.match_tag(b'(') {
+            let tok = id.op().to_owned();
+            let tp = id.tp().to_owned();
+            let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
+            let stmt = StmtNode::box_funccall(funccall)?;
+            self.match_token(b';')?;
+            return Ok(stmt);
         }
-        expr1
+
+        let access = self.offset(id)?;
+        self.match_token(b'=')?;
+        let expr = self.boolean()?;
+        let stmt = StmtNode::box_setelem(access, expr)?;
+        self.match_token(b';')?;
+        Ok(stmt)
     }
 
-    fn join(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.equality();
-        while let Some(Token::And(_)) = self.lexer.tokens.front() {
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.equality();
-                    match expr2 {
-                        Some(x2) => {
-                            let and = And::new(
-                                Rc::clone(&self.label),
-                                Rc::clone(&self.temp_count),
-                                x1,
-                                x2,
-                            );
-                            match and {
-                                Ok(a) => {
-                                    expr1 = Some(ExprUnion::And(Rc::new(a)));
-                                }
-                                Err(e) => {
-                                    panic!("Error at line {}: {}", line, e);
-                                }
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => {
-                    expr1 = None;
-                }
-            }
+    fn boolean(&mut self) -> Result<Box<ExprNode>, String> {
+        let mut expr = self.join()?;
+        while self.look.match_tag(Tag::OR) {
+            self.next()?;
+            let right = self.join()?;
+            expr = ExprNode::box_or(Token::or(), expr, right)?;
         }
-        expr1
+        Ok(expr)
     }
 
-    fn equality(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.rel();
-        while let Some(Token::Eql(s)) | Some(Token::Ne(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.rel();
-                    match expr2 {
-                        Some(x2) => {
-                            if token_string == *"==" {
-                                let eql = Rel::new(
-                                    Token::Eql(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match eql {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *"!=" {
-                                let ne = Rel::new(
-                                    Token::Ne(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match ne {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else {
-                                expr1 = None;
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => {
-                    expr1 = None;
-                }
-            }
+    fn join(&mut self) -> Result<Box<ExprNode>, String> {
+        let mut expr = self.equality()?;
+        while self.look.match_tag(Tag::AND) {
+            self.next()?;
+            let right = self.equality()?;
+            expr = ExprNode::box_and(Token::and(), expr, right)?;
         }
-        expr1
+        Ok(expr)
     }
 
-    fn rel(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.expr();
-        if let Some(Token::Lt(s)) | Some(Token::Gt(s)) | Some(Token::Le(s)) | Some(Token::Ge(s)) =
-            self.lexer.tokens.front()
-        {
-            let token_string = s.clone();
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.expr();
-                    match expr2 {
-                        Some(x2) => {
-                            if token_string == *"<" {
-                                let lt = Rel::new(
-                                    Token::Lt(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match lt {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *">" {
-                                let gt = Rel::new(
-                                    Token::Gt(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match gt {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *"<=" {
-                                let le = Rel::new(
-                                    Token::Le(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match le {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *">=" {
-                                let ge = Rel::new(
-                                    Token::Ge(token_string),
-                                    Rc::clone(&self.label),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match ge {
-                                    Ok(rel) => {
-                                        expr1 = Some(ExprUnion::Rel(Rc::new(rel)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else {
-                                expr1 = None;
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => expr1 = None,
-            }
+    fn equality(&mut self) -> Result<Box<ExprNode>, String> {
+        let mut expr = self.relation()?;
+        while self.look.match_tag(Tag::EQ) || self.look.match_tag(Tag::NE) {
+            let token = self.look.to_owned();
+            self.next()?;
+            let right = self.relation()?;
+            expr = ExprNode::box_rel(token, expr, right)?;
         }
-        expr1
+        Ok(expr)
     }
 
-    fn expr(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.term();
-        while let Some(Token::Add(s)) | Some(Token::Sub(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.term();
-                    match expr2 {
-                        Some(x2) => {
-                            if token_string == *"+" {
-                                let arith = Arith::new(
-                                    Token::Add(token_string),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match arith {
-                                    Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *"-" {
-                                let arith = Arith::new(
-                                    Token::Sub(token_string),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match arith {
-                                    Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else {
-                                expr1 = None;
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => {
-                    expr1 = None;
-                }
-            }
-        }
-        expr1
-    }
+    fn relation(&mut self) -> Result<Box<ExprNode>, String> {
+        let expr = self.expr()?;
+        let token = self.look.to_owned();
 
-    fn term(&mut self) -> Option<ExprUnion> {
-        let mut expr1 = self.unary();
-        while let Some(Token::Mul(s)) | Some(Token::Div(s)) = self.lexer.tokens.front() {
-            let token_string = s.clone();
-            self.lexer.tokens.pop_front();
-            let line = self.get_line();
-            match expr1 {
-                Some(x1) => {
-                    let expr2 = self.unary();
-                    match expr2 {
-                        Some(x2) => {
-                            if token_string == *"*" {
-                                let arith = Arith::new(
-                                    Token::Mul(token_string),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match arith {
-                                    Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else if token_string == *"/" {
-                                let arith = Arith::new(
-                                    Token::Div(token_string),
-                                    Rc::clone(&self.temp_count),
-                                    x1,
-                                    x2,
-                                );
-                                match arith {
-                                    Ok(a) => {
-                                        expr1 = Some(ExprUnion::Arith(Rc::new(a)));
-                                    }
-                                    Err(e) => {
-                                        panic!("Error at line {}: {}", line, e);
-                                    }
-                                }
-                            } else {
-                                expr1 = None;
-                            }
-                        }
-                        None => {
-                            expr1 = None;
-                        }
-                    }
-                }
-                None => {
-                    expr1 = None;
-                }
+        match token.tag() {
+            LT | GT | LE | GE => {
+                self.next()?;
+                let right = self.expr()?;
+                let rel = ExprNode::box_rel(token, expr, right)?;
+                Ok(rel)
             }
-        }
-        expr1
-    }
-
-    fn unary(&mut self) -> Option<ExprUnion> {
-        let peek = self.lexer.tokens.front();
-        match peek {
-            Some(t) => {
-                if let Token::Sub(s) = t.clone() {
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    let expr = self.unary();
-                    match expr {
-                        Some(x) => {
-                            let unary = ExprUnion::Unary(Rc::new(Unary::new(
-                                Token::Sub(s),
-                                Rc::clone(&self.temp_count),
-                                x,
-                            )));
-                            Some(unary)
-                        }
-                        None => None,
-                    }
-                } else if let Token::Not(_) = t.clone() {
-                    self.lexer.tokens.pop_front();
-                    let line = self.get_line();
-                    let expr = self.unary();
-                    match expr {
-                        Some(x) => {
-                            let unary =
-                                Not::new(Rc::clone(&self.label), Rc::clone(&self.temp_count), x);
-                            match unary {
-                                Ok(u) => Some(ExprUnion::Not(Rc::new(u))),
-                                Err(e) => {
-                                    panic!("Error at line {}: {}", line, e);
-                                }
-                            }
-                        }
-                        None => None,
-                    }
-                } else {
-                    self.factor()
-                }
-            }
-            None => None,
+            _ => Ok(expr),
         }
     }
 
-    fn factor(&mut self) -> Option<ExprUnion> {
-        let peek = self.lexer.tokens.front();
-        match peek {
-            Some(t) => match t.clone() {
-                Token::Num(s) => {
-                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
-                        Token::Int(String::from("int")),
-                        Token::Num(s),
-                    )));
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    Some(constant)
-                }
-                Token::Real(s) => {
-                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
-                        Token::Float(String::from("float")),
-                        Token::Real(s),
-                    )));
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    Some(constant)
-                }
-                Token::True(s) => {
-                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
-                        Token::Bool(String::from("bool")),
-                        Token::True(s),
-                    )));
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    Some(constant)
-                }
-                Token::False(s) => {
-                    let constant = ExprUnion::Constant(Rc::new(Constant::new(
-                        Token::Bool(String::from("bool")),
-                        Token::False(s),
-                    )));
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    Some(constant)
-                }
-                Token::Lrb(_) => {
-                    self.lexer.tokens.pop_front();
-                    self.get_line();
-                    let expr = self.boolean();
-                    let next = self.lexer.tokens.pop_front();
-                    let line = self.get_line();
-                    if let Some(Token::Rrb(_)) = next {
-                        expr
-                    } else {
-                        panic!("Error at line {}: token did not match )", line);
-                    }
-                }
-                Token::Id(s) => {
-                    self.lexer.tokens.pop_front();
-                    let line = self.get_line();
-                    let symbol = self.symbol_table.get(&s);
-                    match symbol {
-                        Some(sym) => {
-                            let id = ExprUnion::Id(Rc::new(sym.to_owned()));
-                            match self.lexer.tokens.front() {
-                                Some(Token::Lsb(_)) => {
-                                    let access = self.offset(sym.to_owned());
-                                    Some(ExprUnion::Access(Rc::new(access)))
-                                }
-                                Some(Token::Lrb(_)) => {
-                                    if let Some(ar) = self.activation_record_table.get_mut(&s) {
-                                        let activation_record = ar.to_owned();
+    fn expr(&mut self) -> Result<Box<ExprNode>, String> {
+        let mut expr = self.term()?;
 
-                                        let func_id = sym.to_owned();
+        while self.look.match_tag(b'+') || self.look.match_tag(b'-') {
+            let token = self.look.to_owned();
+            self.next()?;
+            let right = self.term()?;
+            expr = ExprNode::box_arith(token, expr, right)?;
+        }
+        Ok(expr)
+    }
 
-                                        let args: Vec<ExprUnion> = self.args();
+    fn term(&mut self) -> Result<Box<ExprNode>, String> {
+        let mut expr = self.unary()?;
+        while self.look.match_tag(b'*') || self.look.match_tag(b'/') {
+            let token = self.look.to_owned();
+            self.next()?;
+            let right = self.unary()?;
+            expr = ExprNode::box_arith(token, expr, right)?;
+        }
+        Ok(expr)
+    }
 
-                                        if !activation_record
-                                            .params
-                                            .iter()
-                                            .zip(args.iter())
-                                            .all(|(p, a)| p.tp == a.get_type())
-                                        {
-                                            panic!("Error at line {}: argument types did not match function parameter types", line);
-                                        }
-
-                                        let call = ExprUnion::Call(Rc::new(Call::new(
-                                            func_id,
-                                            args,
-                                            Rc::clone(&self.temp_count),
-                                        )));
-
-                                        Some(call)
-                                    } else {
-                                        panic!("Error at line {}: function not declared", line);
-                                    }
-                                }
-                                _ => Some(id),
-                            }
-                        }
-                        None => {
-                            panic!("Error at line {}: {} undeclared", line, s);
-                        }
-                    }
-                }
-                _ => {
-                    let line = self.get_line();
-                    panic!("Error at line {}: missing expression", line)
-                }
-            },
-            None => None,
+    fn unary(&mut self) -> Result<Box<ExprNode>, String> {
+        match self.look.tag() {
+            MINUS => {
+                self.next()?;
+                let mut expr = self.unary()?;
+                expr = ExprNode::box_unary(Token::minus(), expr)?;
+                Ok(expr)
+            }
+            EXCL => {
+                let token = self.look.to_owned();
+                self.next()?;
+                let mut expr = self.unary()?;
+                expr = ExprNode::box_not(token, expr)?;
+                Ok(expr)
+            }
+            _ => self.factor(),
         }
     }
 
-    fn args(&mut self) -> Vec<ExprUnion> {
-        let mut args_vec: Vec<ExprUnion> = Vec::new();
-
-        let args_line = self.get_line();
-
-        if let Some(Token::Lrb(_)) = self.lexer.tokens.pop_front() {
-        } else {
-            panic!("Error at line {}: missing (", args_line);
-        }
-
-        while let Some(Token::Id(_))
-        | Some(Token::True(_))
-        | Some(Token::False(_))
-        | Some(Token::Num(_))
-        | Some(Token::Real(_))
-        | Some(Token::Lrb(_)) = self.lexer.tokens.front()
-        {
-            if let Some(expr) = self.boolean() {
-                args_vec.push(expr);
-            } else {
-                panic!("Error at line {}: missing expression", args_line);
+    fn factor(&mut self) -> Result<Box<ExprNode>, String> {
+        match self.look.tag() {
+            OPAREN => {
+                self.next()?;
+                let expr = self.boolean()?;
+                self.match_token(b')')?;
+                Ok(expr)
             }
+            NUM | REAL => {
+                let expr = ExprNode::box_constant(self.look.to_owned())?;
+                self.next()?;
+                Ok(expr)
+            }
+            TRUE => {
+                let expr = ExprNode::box_true();
+                self.next()?;
+                Ok(expr)
+            }
+            FALSE => {
+                let expr = ExprNode::box_false();
+                self.next()?;
+                Ok(expr)
+            }
+            ID => {
+                let id = self.top.get(&format!("{}", self.look))?;
+                self.next()?;
+                if self.look.match_tag(b'[') {
+                    let expr = self.offset(id)?;
+                    return Ok(expr);
+                } else if self.look.match_tag(b'(') {
+                    let tok = id.op().to_owned();
+                    let tp = id.tp().to_owned();
+                    let funccall = ExprNode::box_funccall(tok, &tp, self.args()?)?;
+                    return Ok(funccall);
+                }
+                Ok(Box::new(id))
+            }
+            _ => Err(format!("Syntax Error near line {}", self.lex.line)),
         }
-
-        if let Some(Token::Rrb(_)) = self.lexer.tokens.pop_front() {
-        } else {
-            panic!("Error at line {}: missing )", args_line);
-        }
-
-        args_vec.reverse();
-        args_vec
     }
 
-    fn offset(&mut self, a: Id) -> Access {
-        let mut tp = a.tp.to_owned();
-
-        let mut t = self.lexer.tokens.pop_front();
-        let line = self.get_line();
-        if let Some(Token::Lsb(_)) = t {
-        } else {
-            panic!("Error at line {}: token did not macth [", line);
-        }
-
-        let mut idx = self.boolean();
-
-        t = self.lexer.tokens.pop_front();
-        self.get_line();
-        if let Some(Token::Rsb(_)) = t {
-        } else {
-            panic!("Error at line {}: token did not macth ]", line);
-        }
-
-        if let Token::Arr(array) = tp {
-            tp = *array.of;
-        }
-
-        match tp.get_width() {
-            Ok(width) => {
-                let mut w = Constant::new(Token::Int(String::from("int")), Token::Num(width));
-                match idx {
-                    Some(i) => {
-                        let mut temp1 = Arith::new(
-                            Token::Mul(String::from("*")),
-                            Rc::clone(&self.temp_count),
-                            i,
-                            ExprUnion::Constant(Rc::new(w.to_owned())),
-                        );
-                        match temp1 {
-                            Ok(t1) => {
-                                let mut loc = t1;
-
-                                while let Some(Token::Lsb(_)) = self.lexer.tokens.front() {
-                                    self.lexer.tokens.pop_front();
-                                    self.get_line();
-
-                                    idx = self.boolean();
-                                    match idx {
-                                        Some(i_inner) => {
-                                            t = self.lexer.tokens.pop_front();
-                                            self.get_line();
-                                            if let Some(Token::Rsb(_)) = t {
-                                            } else {
-                                                panic!(
-                                                    "Error at line {}: token did not match ]",
-                                                    line
-                                                );
-                                            }
-
-                                            if let Token::Arr(array) = tp {
-                                                tp = *array.of;
-                                            }
-
-                                            match tp.get_width() {
-                                                Ok(width_inner) => {
-                                                    w = Constant::new(
-                                                        Token::Int(String::from("int")),
-                                                        Token::Num(width_inner),
-                                                    );
-
-                                                    temp1 = Arith::new(
-                                                        Token::Mul(String::from("*")),
-                                                        Rc::clone(&self.temp_count),
-                                                        i_inner.to_owned(),
-                                                        ExprUnion::Constant(Rc::new(w.to_owned())),
-                                                    );
-                                                    match temp1 {
-                                                        Ok(t1_inner) => {
-                                                            let temp2 = Arith::new(
-                                                                Token::Add(String::from("+")),
-                                                                Rc::clone(&self.temp_count),
-                                                                ExprUnion::Arith(Rc::new(
-                                                                    loc.to_owned(),
-                                                                )),
-                                                                ExprUnion::Arith(Rc::new(
-                                                                    t1_inner.to_owned(),
-                                                                )),
-                                                            );
-                                                            match temp2 {
-                                                                Ok(t2) => {
-                                                                    loc = t2;
-                                                                }
-                                                                Err(e) => {
-                                                                    panic!(
-                                                                        "Error at line {}: {}",
-                                                                        line, e
-                                                                    );
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            panic!("Error at line {}: {}", line, e)
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => panic!("Error at line {}: {}", line, e),
-                                            }
-                                        }
-                                        None => {
-                                            panic!("Error at line {}: index missing", line);
-                                        }
-                                    }
-                                }
-                                Access::new(
-                                    tp.to_owned(),
-                                    Rc::clone(&self.temp_count),
-                                    a,
-                                    ExprUnion::Arith(Rc::new(loc)),
-                                )
-                            }
-                            Err(e) => {
-                                panic!("Error at line {}: {}", line, e);
-                            }
-                        }
-                    }
-                    None => {
-                        panic!("Error at line {}: index missing", line);
-                    }
-                }
+    fn args(&mut self) -> Result<Vec<Box<ExprNode>>, String> {
+        let mut params = Vec::<Box<ExprNode>>::new();
+        self.match_token(b'(')?;
+        while !self.look.match_tag(b')') {
+            let expr = self.boolean()?;
+            params.push(expr);
+            if self.look.match_tag(b',') {
+                self.match_token(b',')?;
             }
-            Err(e) => panic!("Error at line {}: {}", line, e),
         }
+        self.match_token(b')')?;
+        Ok(params)
+    }
+
+    fn offset(&mut self, id: ExprNode) -> Result<Box<ExprNode>, String> {
+        let mut tp = id.tp().to_owned();
+
+        self.match_token(b'[')?;
+        let index = self.boolean()?;
+        self.match_token(b']')?;
+
+        match tp {
+            Type::Array {
+                of,
+                tag: _,
+                length: _,
+            } => tp = *of,
+            _ => return Err(String::from("String error")),
+        };
+
+        let width = ExprNode::box_constant(Token::Num(tp.width() as i64))?;
+        let t1 = ExprNode::box_arith(Token::Token(b'*'), index, width)?;
+
+        let mut loc = t1;
+        while self.look.match_tag(b'[') {
+            self.match_token(b'[')?;
+            let index = self.boolean()?;
+            self.match_token(b']')?;
+
+            match tp {
+                Type::Array {
+                    of,
+                    tag: _,
+                    length: _,
+                } => tp = *of,
+                _ => return Err(String::from("String error")),
+            };
+            let width = ExprNode::box_constant(Token::Num(tp.width() as i64))?;
+            let t1 = ExprNode::box_arith(Token::Token(b'*'), index, width)?;
+            let t2 = ExprNode::box_arith(Token::Token(b'*'), loc, t1)?;
+            loc = t2;
+        }
+
+        ExprNode::box_access(Box::new(id), loc, tp)
     }
 }

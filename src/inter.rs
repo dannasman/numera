@@ -1,1949 +1,1491 @@
-/*
- * TODO:
- * Add use of TACState (NOTE: Unary next)
- * Try to only use gen_tac and reduce_tac!!!
- */
-
-use super::lexer::Token;
-use super::tac::*;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 
-pub trait ExprNode {
-    fn emit_label(&self, tac_ir: TACState, i: u32) {
-        let instruction = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}:", i)),
+use super::tac::*;
+use super::tokens::{Tag, Token};
+
+thread_local! {
+    static LABEL_COUNTER: RefCell<i64> = RefCell::new(1);
+    static TEMP_COUNTER: RefCell<i32> = RefCell::new(1);
+}
+
+pub fn new_label() -> i64 {
+    let mut res = 0;
+    LABEL_COUNTER.with(|counter| {
+        res = *counter.borrow();
+        *counter.borrow_mut() = res + 1;
+    });
+    res
+}
+
+pub fn reset_labels() {
+    LABEL_COUNTER.with(|counter| {
+        *counter.borrow_mut() = 1;
+    });
+}
+
+pub fn emit_label(ir: &mut TACIr, i: i64) {
+    let tac = TACInstruction::new(
+        TACOperator::Null,
+        TACOperand::Null,
+        TACOperand::Null,
+        TACOperand::Label(i),
+    );
+    ir.push(tac)
+}
+
+pub fn emit_function(ir: &mut TACIr, id: String, tp: Type) {
+    let tac = TACInstruction::new(
+        TACOperator::Null,
+        TACOperand::Null,
+        TACOperand::Null,
+        TACOperand::Function(id, tp),
+    );
+    ir.push(tac)
+}
+
+pub fn emit(ir: &mut TACIr, tac: TACInstruction) {
+    ir.push(tac);
+}
+
+pub fn emit_jumps(ir: &mut TACIr, test: TACOperand, t: i64, f: i64) {
+    let tac_t = TACInstruction::new(
+        TACOperator::If,
+        test.to_owned(),
+        TACOperand::Null,
+        TACOperand::Label(t),
+    );
+    if t != 0 && f != 0 {
+        emit(ir, tac_t);
+        let tac_f = TACInstruction::new(
+            TACOperator::Goto,
+            TACOperand::Null,
+            TACOperand::Null,
+            TACOperand::Label(f),
         );
-        tac_ir.push(instruction);
-    }
-
-    fn emit_jumps(&self, tac_ir: TACState, test: TACOperand, t: u32, f: u32) {
-        if t != 0 && f != 0 {
-            let instruction1 = TACInstruction::new(
-                TACOperator::GOTO,
-                TACOperand::IF,
-                test,
-                TACOperand::LABEL(format!("L{}", t)),
-            );
-            tac_ir.push(instruction1);
-            let instruction2 = TACInstruction::new(
-                TACOperator::GOTO,
-                TACOperand::NULL,
-                TACOperand::NULL,
-                TACOperand::LABEL(format!("{}", f)),
-            );
-            tac_ir.push(instruction2);
-        } else if t != 0 {
-            let instruction = TACInstruction::new(
-                TACOperator::GOTO,
-                TACOperand::IF,
-                test,
-                TACOperand::LABEL(format!("L{}", t)),
-            );
-            tac_ir.push(instruction);
-        } else if f != 0 {
-            let instruction = TACInstruction::new(
-                TACOperator::GOTO,
-                TACOperand::IFFALSE,
-                test,
-                TACOperand::LABEL(format!("L{}", f)),
-            );
-            tac_ir.push(instruction);
-        }
-    }
-
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        self.emit_jumps(tac_ir.clone(), self.reduce_tac(tac_ir.clone()), t, f);
-    }
-
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand);
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand;
-}
-
-pub trait StmtNode {
-    fn emit_label(&self, tac_ir: TACState, i: u32) {
-        let instruction = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}:", i)),
+        emit(ir, tac_f);
+    } else if t != 0 {
+        emit(ir, tac_t);
+    } else if f != 0 {
+        let tac_f = TACInstruction::new(
+            TACOperator::Iff,
+            test,
+            TACOperand::Null,
+            TACOperand::Label(f),
         );
-        tac_ir.push(instruction);
-    }
-
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32);
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum ExprUnion {
-    Id(Rc<Id>),
-    Arith(Rc<Arith>),
-    Temp(Rc<Temp>),
-    Unary(Rc<Unary>),
-    Constant(Rc<Constant>),
-    Or(Rc<Or>),
-    And(Rc<And>),
-    Not(Rc<Not>),
-    Rel(Rc<Rel>),
-    Access(Rc<Access>),
-    Call(Rc<Call>),
-}
-
-impl ExprUnion {
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        match self {
-            ExprUnion::Id(id) => id.gen_tac(tac_ir),
-            ExprUnion::Arith(arith) => arith.gen_tac(tac_ir),
-            ExprUnion::Temp(temp) => temp.gen_tac(tac_ir),
-            ExprUnion::Unary(unary) => unary.gen_tac(tac_ir),
-            ExprUnion::Constant(constant) => constant.gen_tac(tac_ir),
-            ExprUnion::Or(or) => or.gen_tac(tac_ir),
-            ExprUnion::And(and) => and.gen_tac(tac_ir),
-            ExprUnion::Not(not) => not.gen_tac(tac_ir),
-            ExprUnion::Rel(rel) => rel.gen_tac(tac_ir),
-            ExprUnion::Access(acc) => acc.gen_tac(tac_ir),
-            ExprUnion::Call(call) => call.gen_tac(tac_ir),
-        }
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        match self {
-            ExprUnion::Id(id) => id.reduce_tac(tac_ir),
-            ExprUnion::Arith(arith) => arith.reduce_tac(tac_ir),
-            ExprUnion::Temp(temp) => temp.reduce_tac(tac_ir),
-            ExprUnion::Unary(unary) => unary.reduce_tac(tac_ir),
-            ExprUnion::Constant(constant) => constant.reduce_tac(tac_ir),
-            ExprUnion::Or(or) => or.reduce_tac(tac_ir),
-            ExprUnion::And(and) => and.reduce_tac(tac_ir),
-            ExprUnion::Not(not) => not.reduce_tac(tac_ir),
-            ExprUnion::Rel(rel) => rel.reduce_tac(tac_ir),
-            ExprUnion::Access(acc) => acc.reduce_tac(tac_ir),
-            ExprUnion::Call(call) => call.reduce_tac(tac_ir),
-        }
-    }
-
-    pub fn get_type(&self) -> Token {
-        match self {
-            ExprUnion::Id(id) => id.tp.clone(),
-            ExprUnion::Arith(arith) => arith.tp.clone(),
-            ExprUnion::Temp(temp) => temp.tp.clone(),
-            ExprUnion::Unary(unary) => unary.tp.clone(),
-            ExprUnion::Constant(constant) => constant.tp.clone(),
-            ExprUnion::Or(or) => or.tp.clone(),
-            ExprUnion::And(and) => and.tp.clone(),
-            ExprUnion::Not(not) => not.tp.clone(),
-            ExprUnion::Rel(rel) => rel.tp.clone(),
-            ExprUnion::Access(acc) => acc.tp.clone(),
-            ExprUnion::Call(call) => call.id.tp.clone(),
-        }
-    }
-
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        match self {
-            ExprUnion::Id(id) => id.jumping(tac_ir, t, f),
-            ExprUnion::Arith(arith) => arith.jumping(tac_ir, t, f),
-            ExprUnion::Temp(temp) => temp.jumping(tac_ir, t, f),
-            ExprUnion::Unary(unary) => unary.jumping(tac_ir, t, f),
-            ExprUnion::Constant(constant) => constant.jumping(tac_ir, t, f),
-            ExprUnion::Or(or) => or.jumping(tac_ir, t, f),
-            ExprUnion::And(and) => and.jumping(tac_ir, t, f),
-            ExprUnion::Not(not) => not.jumping(tac_ir, t, f),
-            ExprUnion::Rel(rel) => rel.jumping(tac_ir, t, f),
-            ExprUnion::Access(acc) => acc.jumping(tac_ir, t, f),
-            ExprUnion::Call(call) => call.jumping(tac_ir, t, f),
-        }
+        emit(ir, tac_f);
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum StmtUnion {
-    If(Rc<If>),
-    Else(Rc<Else>),
-    While(Rc<RefCell<While>>),
-    Set(Rc<Set>),
-    SetElem(Rc<SetElem>),
-    Seq(Rc<Seq>),
-    Break(Rc<Break>),
-    Function(Rc<Function>),
-    FunctionCall(Rc<FunctionCall>), //this is a wrapper struct implemented to handle void function calls
-    Return(Rc<Return>),
+pub enum Type {
+    Basic {
+        lexeme: String,
+        tag: Tag,
+        width: u8,
+    },
+    Array {
+        of: Box<Type>,
+        tag: Tag,
+        length: u32,
+    },
+    Function {
+        return_tp: Box<Type>,
+        param_tps: Vec<Type>,
+    },
+    Void,
 }
 
-impl StmtUnion {
-    fn after(&self) -> u32 {
-        match self {
-            StmtUnion::While(while_stmt) => {
-                let while_borrow = while_stmt.borrow_mut();
-                let after_borrow = while_borrow.after.borrow_mut();
-                let after = *after_borrow;
-                drop(after_borrow);
-                drop(while_borrow);
-                after
+impl Type {
+    pub fn new(token: Token) -> Result<Type, String> {
+        match token {
+            Token::BasicType(lexeme, tag, width) => Ok(Type::Basic { lexeme, tag, width }),
+            Token::Array(of, length) => {
+                let o = Type::new(*of)?;
+                Ok(Type::Array {
+                    of: Box::new(o),
+                    tag: Tag::INDEX,
+                    length,
+                })
             }
-            _ => 0,
+            Token::Function(return_tp, param_tps) => {
+                let r = Type::new(*return_tp)?;
+                let mut p = Vec::new();
+                for tok in param_tps {
+                    let tp = Type::new(tok)?;
+                    p.push(tp);
+                }
+                Ok(Type::Function {
+                    return_tp: Box::new(r),
+                    param_tps: p,
+                })
+            }
+            Token::Void => Ok(Type::Void),
+            _ => Err(format!("Can not convert token {} to Type", token)),
         }
     }
-    pub fn emit_label(&self, tac_ir: TACState, i: u32) {
+
+    pub fn function(return_tp: Box<Type>, param_tps: Vec<Type>) -> Type {
+        Type::Function {
+            return_tp,
+            param_tps,
+        }
+    }
+
+    pub fn array(of: Type, length: u32) -> Type {
+        Type::Array {
+            of: Box::new(of),
+            tag: Tag::INDEX,
+            length,
+        }
+    }
+
+    pub fn int() -> Type {
+        Type::new(Token::int()).unwrap()
+    }
+
+    pub fn float() -> Type {
+        Type::new(Token::float()).unwrap()
+    }
+
+    pub fn char() -> Type {
+        Type::new(Token::char()).unwrap()
+    }
+
+    pub fn bool() -> Type {
+        Type::new(Token::bool()).unwrap()
+    }
+
+    pub fn void() -> Type {
+        Type::new(Token::void()).unwrap()
+    }
+
+    pub fn token(&self) -> Token {
+        match &self {
+            Type::Basic { lexeme, tag, width } => Token::BasicType(lexeme.to_owned(), *tag, *width),
+            Type::Array { of, tag: _, length } => Token::Array(Box::new(of.token()), *length),
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => Token::Function(
+                Box::new(return_tp.token()),
+                param_tps.into_iter().map(|tp| tp.token()).collect(),
+            ),
+            Type::Void => Token::Void,
+        }
+    }
+
+    pub fn tag(&self) -> Tag {
+        match &self {
+            Type::Basic {
+                lexeme: _,
+                tag,
+                width: _,
+            } => *tag,
+            Type::Array {
+                of: _,
+                tag,
+                length: _,
+            } => *tag,
+            Type::Function {
+                return_tp: _,
+                param_tps: _,
+            } => Tag::FUNCTION,
+            Type::Void => Tag::VOID,
+        }
+    }
+
+    pub fn width(&self) -> u32 {
         match self {
-            StmtUnion::If(if_stmt) => if_stmt.emit_label(tac_ir, i),
-            StmtUnion::Else(else_stmt) => else_stmt.emit_label(tac_ir, i),
-            StmtUnion::While(while_stmt) => while_stmt.borrow().emit_label(tac_ir, i),
-            StmtUnion::Set(set_stmt) => set_stmt.emit_label(tac_ir, i),
-            StmtUnion::SetElem(set_stmt) => set_stmt.emit_label(tac_ir, i),
-            StmtUnion::Seq(seq_stmt) => seq_stmt.emit_label(tac_ir, i),
-            StmtUnion::Break(break_stmt) => break_stmt.emit_label(tac_ir, i),
-            StmtUnion::Function(function_stmt) => function_stmt.emit_label(tac_ir, i),
-            StmtUnion::FunctionCall(call_stmt) => call_stmt.emit_label(tac_ir, i),
-            StmtUnion::Return(return_stmt) => return_stmt.emit_label(tac_ir, i),
+            Type::Basic {
+                lexeme: _,
+                tag: _,
+                width,
+            } => *width as u32,
+            Type::Array { of, tag: _, length } => of.width() * length,
+            Type::Function {
+                return_tp: _,
+                param_tps,
+            } => {
+                /*let mut width = return_tp.width();
+                width += param_tps
+                    .into_iter()
+                    .map(|tp| tp.width())
+                    .fold(0, |w, e| w + e);
+                width*/
+                param_tps
+                    .into_iter()
+                    .map(|tp| tp.width())
+                    .fold(0, |w, e| w + e)
+            }
+            Type::Void => 0,
         }
     }
-    pub fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
+
+    pub fn element_tp(&self) -> &Type {
         match self {
-            StmtUnion::If(if_stmt) => if_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::Else(else_stmt) => else_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::While(while_stmt) => while_stmt.borrow().gen_tac(tac_ir, b, a),
-            StmtUnion::Set(set_stmt) => set_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::SetElem(set_stmt) => set_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::Seq(seq_stmt) => seq_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::Break(break_stmt) => break_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::Function(function_stmt) => function_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::FunctionCall(call_stmt) => call_stmt.gen_tac(tac_ir, b, a),
-            StmtUnion::Return(return_stmt) => return_stmt.gen_tac(tac_ir, b, a),
+            Type::Array { of, tag: _, length } => of.element_tp(),
+            _ => self,
+        }
+    }
+
+    pub fn param_tps(&self) -> Result<Vec<Type>, String> {
+        match self {
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => Ok(param_tps.to_owned()),
+            _ => Err(String::from("Failed to get parameter types")),
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        if let Type::Basic {
+            lexeme,
+            tag: _,
+            width: _,
+        } = self
+        {
+            match lexeme.as_str() {
+                "int" | "float" | "char" => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn is_function(&self) -> bool {
+        if let Type::Function {
+            return_tp: _,
+            param_tps: _,
+        } = self
+        {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn max_type(left: &Type, right: &Type) -> Option<Type> {
+        if !left.is_numeric() || !right.is_numeric() {
+            None
+        } else if *left == Type::float() || *right == Type::float() {
+            Some(Type::float())
+        } else if *left == Type::int() || *right == Type::int() {
+            Some(Type::int())
+        } else {
+            Some(Type::char())
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Id {
-    pub tp: Token, //type
-    pub token: Token,
-    _offset: u32,
-}
-
-impl Id {
-    pub fn new(tp: Token, token: Token, b: u32) -> Self {
-        Id {
-            tp,
-            token,
-            _offset: b,
-        }
-    }
-}
-
-impl ExprNode for Id {
-    fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        match &self.tp {
-            Token::Int(_) => (
-                TACOperator::NONE,
-                TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            Token::Float(_) => (
-                TACOperator::NONE,
-                TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            Token::Bool(_) => (
-                TACOperator::NONE,
-                TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            Token::Arr(arr) => match *arr.of {
-                Token::Int(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                Token::Float(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                Token::Bool(_) => (
-                    TACOperator::NONE,
-                    TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-                    TACOperand::NULL,
-                ),
-                _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Type::Basic {
+                lexeme: lexeme1,
+                tag: tag1,
+                width: width1,
+            } => match other {
+                Type::Basic {
+                    lexeme: lexeme2,
+                    tag: tag2,
+                    width: width2,
+                } => lexeme1 == lexeme2 && tag1 == tag2 && width1 == width2,
+                _ => false,
             },
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
-        }
-    }
-
-    fn reduce_tac(&self, _tac_ir: TACState) -> TACOperand {
-        match &self.tp {
-            Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-            Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-            Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-            Token::Arr(arr) => match *arr.of {
-                Token::Int(_) => TACOperand::VAR_INT(self.token.to_owned().value_to_string()),
-                Token::Float(_) => TACOperand::VAR_FLOAT(self.token.to_owned().value_to_string()),
-                Token::Bool(_) => TACOperand::VAR_BOOL(self.token.to_owned().value_to_string()),
-                _ => TACOperand::NULL,
+            Type::Array {
+                of: of1,
+                tag: tag1,
+                length: length1,
+            } => match other {
+                Type::Array {
+                    of: of2,
+                    tag: tag2,
+                    length: length2,
+                } => of1 == of2 && tag1 == tag2 && length1 == length2,
+                _ => false,
             },
-            _ => TACOperand::NULL,
+            Type::Function {
+                return_tp: rtp1,
+                param_tps: ptps1,
+            } => match other {
+                Type::Function {
+                    return_tp: rtp2,
+                    param_tps: ptps2,
+                } => {
+                    rtp1 == rtp2
+                        && ptps1.len() == ptps2.len()
+                        && ptps1
+                            .into_iter()
+                            .zip(ptps2.into_iter())
+                            .map(|(tp1, tp2)| tp1 == tp2)
+                            .fold(true, |b, e| b && e)
+                }
+                _ => false,
+            },
+            Type::Void => match other {
+                Type::Void => true,
+                _ => false,
+            },
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Call {
-    id: Id,
-    params: Vec<ExprUnion>,
-    temp_count: Rc<RefCell<u32>>,
+impl Eq for Type {}
+
+pub enum ExprNode {
+    Constant(Token, Type),
+    Id(Token, Type, i32),
+    Temp(Token, Type, i32),
+    Arith(Token, Type, Box<ExprNode>, Box<ExprNode>),
+    Unary(Token, Type, Box<ExprNode>),
+    Access(Token, Box<ExprNode>, Box<ExprNode>, Type),
+    Rel(Token, Type, Box<ExprNode>, Box<ExprNode>),
+    Not(Token, Type, Box<ExprNode>),
+    Or(Token, Type, Box<ExprNode>, Box<ExprNode>),
+    And(Token, Type, Box<ExprNode>, Box<ExprNode>),
+    FuncCall(Token, Type, Vec<Box<ExprNode>>, Vec<Type>),
 }
 
-impl Call {
-    pub fn new(id: Id, params: Vec<ExprUnion>, temp_count: Rc<RefCell<u32>>) -> Self {
-        Self {
-            id,
-            params,
-            temp_count,
+impl ExprNode {
+    pub fn op(&self) -> &Token {
+        match self {
+            ExprNode::Constant(op, _) => op,
+            ExprNode::Id(op, _, _) => op,
+            ExprNode::Temp(op, _, _) => op,
+            ExprNode::Arith(op, _, _, _) => op,
+            ExprNode::Unary(op, _, _) => op,
+            ExprNode::Access(op, _, _, _) => op,
+            ExprNode::Rel(op, _, _, _) => op,
+            ExprNode::Not(op, _, _) => op,
+            ExprNode::Or(op, _, _, _) => op,
+            ExprNode::And(op, _, _, _) => op,
+            ExprNode::FuncCall(op, _, _, _) => op,
         }
     }
-}
 
-impl ExprNode for Call {
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        self.params.iter().for_each(|e| {
-            let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction =
-                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
-            tac_ir.push(instruction);
+    pub fn tp(&self) -> &Type {
+        match self {
+            ExprNode::Constant(_, tp) => tp,
+            ExprNode::Id(_, tp, _) => tp,
+            ExprNode::Temp(_, tp, _) => tp,
+            ExprNode::Arith(_, tp, _, _) => tp,
+            ExprNode::Unary(_, tp, _) => tp,
+            ExprNode::Access(_, _, _, tp) => tp,
+            ExprNode::Rel(_, tp, _, _) => tp,
+            ExprNode::Not(_, tp, _) => tp,
+            ExprNode::Or(_, tp, _, _) => tp,
+            ExprNode::And(_, tp, _, _) => tp,
+            ExprNode::FuncCall(_, tp, _, _) => tp,
+        }
+    }
+
+    pub fn return_tp(&self) -> Result<Type, String> {
+        match self {
+            ExprNode::Id(_, tp, _) => match tp {
+                Type::Function {
+                    return_tp,
+                    param_tps: _,
+                } => Ok(*return_tp.to_owned()),
+                _ => return Err(String::from("Type of id not Function")),
+            },
+            _ => return Err(String::from("Not an Id expression")),
+        }
+    }
+
+    pub fn is_id(&self) -> bool {
+        if let ExprNode::Id(_, _, _) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn return_offset(&self) -> Result<i32, String> {
+        match self {
+            ExprNode::Id(_, _, offset) => Ok(*offset),
+            _ => Err(String::from("Failed to return offset")),
+        }
+    }
+
+    pub fn operand_to_tac(&self) -> Result<TACOperand, String> {
+        match self {
+            ExprNode::Constant(op, tp) => Ok(TACOperand::Const(op.to_string(), tp.to_owned())),
+            ExprNode::Id(op, tp, offset) => {
+                if *offset <= 0 {
+                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
+                } else {
+                    Ok(TACOperand::Var(op.to_string(), tp.to_owned(), *offset))
+                }
+            }
+            ExprNode::Temp(_, tp, num) => Ok(TACOperand::Temp(format!("t{}", num), tp.to_owned())),
+            ExprNode::Access(_, array, index, tp) => Ok(TACOperand::Array(
+                array.to_string(),
+                index.to_string(),
+                array.tp().to_owned(),
+                array.return_offset()?,
+            )),
+            _ => Err(format!(
+                "Failed to generate TAC from given expression {}",
+                self
+            )),
+        }
+    }
+
+    pub fn operator_to_tac(&self) -> Result<TACOperator, String> {
+        match self {
+            ExprNode::Arith(op, _, _, _) => {
+                if op.tag() == Token::Token('+' as u8).tag() {
+                    Ok(TACOperator::Add)
+                } else if op.tag() == Token::Token('-' as u8).tag() {
+                    Ok(TACOperator::Sub)
+                } else if op.tag() == Token::Token('*' as u8).tag() {
+                    Ok(TACOperator::Mul)
+                } else if op.tag() == Token::Token('/' as u8).tag() {
+                    Ok(TACOperator::Div)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Unary(op, _, _) => {
+                if op.tag() == Tag::MINUS.into() {
+                    Ok(TACOperator::Sub)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Rel(op, _, _, _) => {
+                if op.tag() == Token::Token('<' as u8).tag() {
+                    Ok(TACOperator::Lt)
+                } else if op.tag() == Token::Token('>' as u8).tag() {
+                    Ok(TACOperator::Gt)
+                } else if op.tag() == Tag::LE.into() {
+                    Ok(TACOperator::Le)
+                } else if op.tag() == Tag::GE.into() {
+                    Ok(TACOperator::Ge)
+                } else if op.tag() == Tag::EQ.into() {
+                    Ok(TACOperator::Eql)
+                } else if op.tag() == Tag::NE.into() {
+                    Ok(TACOperator::Ne)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Not(op, _, _) => {
+                if op.tag() == Token::Token('-' as u8).tag() {
+                    Ok(TACOperator::Not)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::Or(op, _, _, _) => {
+                if op.tag() == Tag::OR.into() {
+                    Ok(TACOperator::Or)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            ExprNode::And(op, _, _, _) => {
+                if op.tag() == Tag::AND.into() {
+                    Ok(TACOperator::And)
+                } else {
+                    Err(String::from("Failed to generate TAC from given operator"))
+                }
+            }
+            _ => Err(String::from("Failed to generate TAC from given operator")),
+        }
+    }
+
+    pub fn new_true() -> ExprNode {
+        ExprNode::Constant(Token::ttrue(), Type::bool())
+    }
+
+    pub fn box_true() -> Box<ExprNode> {
+        Box::new(ExprNode::new_true())
+    }
+
+    pub fn new_false() -> ExprNode {
+        ExprNode::Constant(Token::tfalse(), Type::bool())
+    }
+
+    pub fn box_false() -> Box<ExprNode> {
+        Box::new(ExprNode::new_false())
+    }
+
+    pub fn new_constant(token: Token) -> Result<ExprNode, String> {
+        match token {
+            Token::Num(_) => Ok(ExprNode::Constant(token, Type::int())),
+            Token::Real(_) => Ok(ExprNode::Constant(token, Type::float())),
+            t => Err(format!("Invalid parameter: {}", t)),
+        }
+    }
+
+    pub fn box_constant(token: Token) -> Result<Box<ExprNode>, String> {
+        let constant = ExprNode::new_constant(token)?;
+        Ok(Box::new(constant))
+    }
+
+    pub fn new_id(id: Token, tp: &Type, offset: i32) -> ExprNode {
+        ExprNode::Id(id, tp.to_owned(), offset)
+    }
+
+    pub fn box_id(id: Token, tp: &Type, offset: i32) -> Box<ExprNode> {
+        Box::new(ExprNode::new_id(id, tp, offset))
+    }
+
+    pub fn new_temp(tp: &Type) -> ExprNode {
+        let mut num: i32 = 0;
+        TEMP_COUNTER.with(|c| {
+            num = *c.borrow();
+            *c.borrow_mut() = num + 1;
         });
-        (
-            TACOperator::CALL,
-            self.id.reduce_tac(tac_ir.clone()),
-            TACOperand::NULL,
+        ExprNode::Temp(Token::temp(), tp.to_owned(), num)
+    }
+
+    pub fn box_temp(tp: &Type) -> Box<ExprNode> {
+        Box::new(ExprNode::new_temp(tp))
+    }
+
+    pub fn new_arith(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<ExprNode, String> {
+        let tp = match Type::max_type(left.tp(), right.tp()) {
+            Some(t) => t,
+            None => return Err(String::from("Type error")),
+        };
+
+        Ok(ExprNode::Arith(token, tp, left, right))
+    }
+
+    pub fn box_arith(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<Box<ExprNode>, String> {
+        let arith = ExprNode::new_arith(token, left, right)?;
+        Ok(Box::new(arith))
+    }
+
+    pub fn new_unary(token: Token, expr: Box<ExprNode>) -> Result<ExprNode, String> {
+        let tp = match Type::max_type(&Type::int(), expr.tp()) {
+            Some(t) => t,
+            None => return Err(String::from("Type error")),
+        };
+
+        Ok(ExprNode::Unary(token, tp, expr))
+    }
+
+    pub fn box_unary(token: Token, expr: Box<ExprNode>) -> Result<Box<ExprNode>, String> {
+        let unary = ExprNode::new_unary(token, expr)?;
+        Ok(Box::new(unary))
+    }
+
+    pub fn new_access(
+        array: Box<ExprNode>,
+        index: Box<ExprNode>,
+        tp: Type,
+    ) -> Result<ExprNode, String> {
+        if !array.is_id() {
+            Err(String::from("Type error"))
+        } else {
+            Ok(ExprNode::Access(Token::access(), array, index, tp))
+        }
+    }
+
+    pub fn box_access(
+        array: Box<ExprNode>,
+        index: Box<ExprNode>,
+        tp: Type,
+    ) -> Result<Box<ExprNode>, String> {
+        let access = ExprNode::new_access(array, index, tp)?;
+        Ok(Box::new(access))
+    }
+
+    pub fn new_rel(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<ExprNode, String> {
+        if left.tp() != right.tp() {
+            Err(String::from("Type error"))
+        } else if let Type::Array {
+            of: _,
+            tag: _,
+            length: _,
+        } = left.tp()
+        {
+            Err(String::from("type error"))
+        } else if let Type::Array {
+            of: _,
+            tag: _,
+            length: _,
+        } = right.tp()
+        {
+            Err(String::from("type error"))
+        } else {
+            Ok(ExprNode::Rel(token, Type::bool(), left, right))
+        }
+    }
+
+    pub fn box_rel(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<Box<ExprNode>, String> {
+        let rel = ExprNode::new_rel(token, left, right)?;
+        Ok(Box::new(rel))
+    }
+
+    pub fn new_not(token: Token, expr: Box<ExprNode>) -> Result<ExprNode, String> {
+        if expr.tp() != &Type::bool() {
+            return Err(String::from("Type error"));
+        }
+        if token.tag() != Token::Token('!' as u8).tag() {
+            return Err(String::from("Lexer error"));
+        }
+        Ok(ExprNode::Not(token, Type::bool(), expr))
+    }
+
+    pub fn box_not(token: Token, expr: Box<ExprNode>) -> Result<Box<ExprNode>, String> {
+        let not = ExprNode::new_not(token, expr)?;
+        Ok(Box::new(not))
+    }
+
+    pub fn new_or(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<ExprNode, String> {
+        let bt = Type::bool();
+        if left.tp() != &bt || right.tp() != &bt {
+            return Err(String::from("Type Error"));
+        }
+        Ok(ExprNode::Or(token, Type::bool(), left, right))
+    }
+
+    pub fn box_or(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<Box<ExprNode>, String> {
+        let or = ExprNode::new_or(token, left, right)?;
+        Ok(Box::new(or))
+    }
+
+    pub fn new_and(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<ExprNode, String> {
+        let bt = Type::bool();
+        if left.tp() != &bt || right.tp() != &bt {
+            return Err(String::from("Type Error"));
+        }
+        Ok(ExprNode::And(token, Type::bool(), left, right))
+    }
+
+    pub fn box_and(
+        token: Token,
+        left: Box<ExprNode>,
+        right: Box<ExprNode>,
+    ) -> Result<Box<ExprNode>, String> {
+        let and = ExprNode::new_and(token, left, right)?;
+        Ok(Box::new(and))
+    }
+
+    pub fn new_funccall(
+        id: Token,
+        tp: &Type,
+        params: Vec<Box<ExprNode>>,
+    ) -> Result<ExprNode, String> {
+        match tp {
+            Type::Function {
+                return_tp,
+                param_tps,
+            } => {
+                let matching_tps = params
+                    .to_owned()
+                    .into_iter()
+                    .map(|p| p.tp().to_owned())
+                    .zip(param_tps.into_iter())
+                    .map(|(tp1, tp2)| match Type::max_type(&tp1, tp2) {
+                        Some(tp) => tp == *tp2,
+                        None => false,
+                    })
+                    .fold(true, |b, e| b && e);
+                if !matching_tps || param_tps.len() != params.len() {
+                    return Err(String::from("Type Error"));
+                }
+                let funccall_tp = *return_tp.to_owned();
+                Ok(ExprNode::FuncCall(
+                    id,
+                    funccall_tp,
+                    params,
+                    param_tps.to_owned(),
+                ))
+            }
+            _ => Err(String::from("Type Error")),
+        }
+    }
+
+    pub fn box_funccall(
+        id: Token,
+        tp: &Type,
+        params: Vec<Box<ExprNode>>,
+    ) -> Result<Box<ExprNode>, String> {
+        let funccall = ExprNode::new_funccall(id, tp, params)?;
+        Ok(Box::new(funccall))
+    }
+
+    pub fn void_funccall(&self, ir: &mut TACIr) -> Result<(), String> {
+        if let ExprNode::FuncCall(id, tp, params, param_tps) = self {
+            if *tp != Type::Void {
+                return Err(String::from("Type Error"));
+            }
+            let mut count = 0;
+            let mut params_reduced = Vec::<Box<ExprNode>>::new();
+            for param in params.into_iter().rev() {
+                let expr = param.reduce(ir)?;
+                params_reduced.push(expr);
+                count += 1;
+            }
+
+            //TODO: parempi vaihtoehto unwrapille
+            params_reduced
+                .into_iter()
+                .zip(param_tps.into_iter())
+                .for_each(|(r, ptp)| {
+                    let tac_param = TACInstruction::new(
+                        TACOperator::Param(ptp.to_owned()),
+                        r.operand_to_tac().unwrap(),
+                        TACOperand::Null,
+                        TACOperand::Null,
+                    );
+                    emit(ir, tac_param);
+                });
+
+            let tac_call = TACInstruction::new(
+                TACOperator::Call(count),
+                TACOperand::Null,
+                TACOperand::Null,
+                TACOperand::Function(id.to_string(), Type::Void),
+            );
+            emit(ir, tac_call);
+            Ok(())
+        } else {
+            Err(String::from("Expression is not a function call"))
+        }
+    }
+
+    pub fn jumping(&self, ir: &mut TACIr, t: i64, f: i64) -> Result<(), String> {
+        match self {
+            ExprNode::Rel(_, tp, left, right) => {
+                let lr = left.reduce(ir)?;
+                let rr = right.reduce(ir)?;
+                let tmp = ExprNode::new_temp(tp);
+                let tac = TACInstruction::new(
+                    self.operator_to_tac()?,
+                    lr.operand_to_tac()?,
+                    rr.operand_to_tac()?,
+                    tmp.operand_to_tac()?,
+                );
+                emit(ir, tac);
+                emit_jumps(ir, tmp.operand_to_tac()?, t, f);
+            }
+            ExprNode::Not(_, _, expr) => {
+                expr.jumping(ir, f, t)?;
+            }
+            ExprNode::Or(_, _, left, right) => {
+                let mut label = t;
+                if t == 0 {
+                    label = new_label();
+                }
+                left.jumping(ir, label, 0)?;
+                right.jumping(ir, t, f)?;
+                if t == 0 {
+                    emit_label(ir, label);
+                }
+            }
+            ExprNode::And(_, _, left, right) => {
+                let mut label = f;
+                if f == 0 {
+                    label = new_label();
+                }
+                left.jumping(ir, 0, label)?;
+                right.jumping(ir, t, f)?;
+
+                if f == 0 {
+                    emit_label(ir, label);
+                }
+            }
+            _ => emit_jumps(ir, self.operand_to_tac()?, t, f),
+        }
+        Ok(())
+    }
+
+    pub fn gen(&self, ir: &mut TACIr) -> Result<Box<ExprNode>, String> {
+        match self {
+            ExprNode::Arith(op, _, left, right) => {
+                let lr = left.reduce(ir)?;
+                let rr = right.reduce(ir)?;
+                match ExprNode::new_arith(op.to_owned(), lr, rr) {
+                    Ok(arith) => Ok(Box::new(arith)),
+                    Err(s) => Err(s),
+                }
+            }
+            ExprNode::Unary(op, _, expr) => {
+                let rexpr = expr.reduce(ir)?;
+                let unary = ExprNode::new_unary(op.to_owned(), rexpr)?;
+                Ok(Box::new(unary))
+            }
+            ExprNode::Access(_, array, index, tp) => {
+                let i = index.reduce(ir)?;
+                Ok(Box::new(ExprNode::Access(
+                    Token::access(),
+                    array.to_owned(),
+                    i,
+                    tp.to_owned(),
+                )))
+            }
+            ExprNode::Rel(_, tp, _, _)
+            | ExprNode::Not(_, tp, _)
+            | ExprNode::Or(_, tp, _, _)
+            | ExprNode::And(_, tp, _, _) => {
+                let f = new_label();
+                let a = new_label();
+                let tmp = ExprNode::new_temp(tp);
+                self.jumping(ir, 0, f)?;
+                let tac_true = TACInstruction::new(
+                    TACOperator::Assign,
+                    TACOperand::True,
+                    TACOperand::Null,
+                    tmp.operand_to_tac()?,
+                );
+                let tac_goto = TACInstruction::new(
+                    TACOperator::Goto,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Label(a),
+                );
+                let tac_false = TACInstruction::new(
+                    TACOperator::Assign,
+                    TACOperand::False,
+                    TACOperand::Null,
+                    tmp.operand_to_tac()?,
+                );
+                emit(ir, tac_true);
+                emit(ir, tac_goto);
+                emit_label(ir, f);
+                emit(ir, tac_false);
+                emit_label(ir, a);
+                Ok(Box::new(tmp))
+            }
+            ExprNode::FuncCall(_, _, _, _) => self.reduce(ir),
+            _ => Ok(self.box_clone()),
+        }
+    }
+
+    pub fn reduce(&self, ir: &mut TACIr) -> Result<Box<ExprNode>, String> {
+        match self {
+            ExprNode::Arith(_, tp, _, _) | ExprNode::Unary(_, tp, _) => {
+                let x = self.gen(ir)?;
+                let tmp = ExprNode::new_temp(tp);
+                let op = x.operator_to_tac()?;
+                let tac = match *x {
+                    ExprNode::Arith(_, _, left, right) => TACInstruction::new(
+                        op,
+                        left.operand_to_tac()?,
+                        right.operand_to_tac()?,
+                        tmp.operand_to_tac()?,
+                    ),
+                    ExprNode::Unary(_, _, expr) => TACInstruction::new(
+                        op,
+                        expr.operand_to_tac()?,
+                        TACOperand::Null,
+                        tmp.operand_to_tac()?,
+                    ),
+                    _ => return Err(format!("Failed to generate TAC from {}", x)),
+                };
+                emit(ir, tac);
+                Ok(Box::new(tmp))
+            }
+            ExprNode::Access(_, _, _, tp) => {
+                let x = self.gen(ir)?;
+                let tmp = ExprNode::new_temp(tp);
+                let tac = TACInstruction::new(
+                    TACOperator::Assign,
+                    x.operand_to_tac()?,
+                    TACOperand::Null,
+                    tmp.operand_to_tac()?,
+                );
+                emit(ir, tac);
+                Ok(Box::new(tmp))
+            }
+            ExprNode::FuncCall(id, tp, params, param_tps) => {
+                let mut count = 0;
+                let mut params_reduced = Vec::<Box<ExprNode>>::new();
+                for param in params.into_iter().rev() {
+                    let expr = param.reduce(ir)?;
+                    params_reduced.push(expr);
+                    count += 1;
+                }
+
+                //TODO: parempi vaihtoehto unwrapille
+                params_reduced
+                    .into_iter()
+                    .zip(param_tps.into_iter())
+                    .for_each(|(r, ptp)| {
+                        let tac_param = TACInstruction::new(
+                            TACOperator::Param(ptp.to_owned()),
+                            r.operand_to_tac().unwrap(),
+                            TACOperand::Null,
+                            TACOperand::Null,
+                        );
+                        emit(ir, tac_param);
+                    });
+
+                let tmp = ExprNode::new_temp(tp);
+                let tac_call = TACInstruction::new(
+                    TACOperator::Call(count),
+                    TACOperand::Function(id.to_string(), tp.to_owned()),
+                    TACOperand::Null,
+                    tmp.operand_to_tac()?,
+                );
+                emit(ir, tac_call);
+                Ok(Box::new(tmp))
+            }
+            _ => Ok(self.box_clone()),
+        }
+    }
+
+    pub fn box_clone(&self) -> Box<ExprNode> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for ExprNode {
+    fn clone(&self) -> Self {
+        match self {
+            ExprNode::Constant(op, tp) => ExprNode::Constant(op.clone(), tp.clone()),
+            ExprNode::Id(id, tp, offset) => ExprNode::Id(id.clone(), tp.clone(), offset.clone()),
+            ExprNode::Temp(op, tp, num) => ExprNode::Temp(op.clone(), tp.clone(), num.clone()),
+            ExprNode::Arith(op, tp, left, right) => {
+                ExprNode::Arith(op.clone(), tp.clone(), left.box_clone(), right.box_clone())
+            }
+            ExprNode::Unary(op, tp, expr) => {
+                ExprNode::Unary(op.clone(), tp.clone(), expr.box_clone())
+            }
+            ExprNode::Access(op, array, index, tp) => {
+                ExprNode::Access(op.clone(), array.box_clone(), index.box_clone(), tp.clone())
+            }
+            ExprNode::Rel(op, _, left, right) => ExprNode::Rel(
+                op.clone(),
+                Type::bool(),
+                left.box_clone(),
+                right.box_clone(),
+            ),
+            ExprNode::Not(op, _, expr) => ExprNode::Not(op.clone(), Type::bool(), expr.box_clone()),
+            ExprNode::Or(op, _, left, right) => ExprNode::Or(
+                op.clone(),
+                Type::bool(),
+                left.box_clone(),
+                right.box_clone(),
+            ),
+            ExprNode::And(op, _, left, right) => ExprNode::And(
+                op.clone(),
+                Type::bool(),
+                left.box_clone(),
+                right.box_clone(),
+            ),
+            ExprNode::FuncCall(id, tp, params, param_tps) => {
+                ExprNode::FuncCall(id.clone(), tp.clone(), params.clone(), param_tps.clone())
+            }
+        }
+    }
+}
+
+impl fmt::Display for ExprNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExprNode::Constant(token, _) => write!(f, "{}", token),
+            ExprNode::Id(id, _, _) => write!(f, "{}", id),
+            ExprNode::Temp(_, _, num) => write!(f, "t{}", num),
+            ExprNode::Arith(op, _, left, right) => write!(f, "{} {} {}", left, op, right),
+            ExprNode::Unary(op, _, expr) => write!(f, "{} {}", op, expr),
+            ExprNode::Access(_, array, index, _) => write!(f, "{} [ {} ]", array, index),
+            ExprNode::Rel(op, _, left, right) => write!(f, "{} {} {}", left, op, right),
+            ExprNode::Not(op, _, expr) => write!(f, "{} {}", op, expr),
+            ExprNode::Or(op, _, left, right) => write!(f, "{} {} {}", left, op, right),
+            ExprNode::And(op, _, left, right) => write!(f, "{}, {}, {}", left, op, right),
+            _ => write!(f, ""),
+        }
+    }
+}
+
+pub enum StmtNode {
+    Null,
+    Set(Box<ExprNode>, Box<ExprNode>),
+    SetElem(Box<ExprNode>, Box<ExprNode>, Box<ExprNode>),
+    Seq(Box<StmtNode>, Box<StmtNode>),
+    If(Box<ExprNode>, Box<StmtNode>),
+    Else(Box<ExprNode>, Box<StmtNode>, Box<StmtNode>),
+    While(Box<ExprNode>, Box<StmtNode>),
+    Do(Box<ExprNode>, Box<StmtNode>),
+    Break(Rc<RefCell<i64>>),
+    FuncDef(Box<ExprNode>, Box<StmtNode>, i32),
+    Return(Rc<RefCell<i64>>, Option<Box<ExprNode>>, Rc<RefCell<Type>>),
+    FuncCall(Box<ExprNode>),
+}
+
+impl StmtNode {
+    pub fn new_null() -> StmtNode {
+        StmtNode::Null
+    }
+
+    pub fn box_null() -> Box<StmtNode> {
+        Box::new(StmtNode::new_null())
+    }
+
+    pub fn new_set(id: Box<ExprNode>, expr: Box<ExprNode>) -> Result<StmtNode, String> {
+        if !id.is_id() {
+            return Err(String::from("Type Error"));
+        }
+
+        let id_tp = id.tp();
+        let expr_tp = expr.tp();
+        if id_tp.is_numeric() && !expr_tp.is_numeric()
+            || !id_tp.is_numeric() && expr_tp.is_numeric()
+        {
+            return Err(String::from("Type Error"));
+        }
+        let bt = Type::bool();
+        if id_tp == &bt && expr_tp != &bt || id_tp != &bt && expr_tp == &bt {
+            return Err(String::from("Type Error"));
+        }
+        Ok(StmtNode::Set(id, expr))
+    }
+
+    pub fn box_set(id: Box<ExprNode>, expr: Box<ExprNode>) -> Result<Box<StmtNode>, String> {
+        let set = StmtNode::new_set(id, expr)?;
+        Ok(Box::new(set))
+    }
+
+    pub fn new_setelem(access: Box<ExprNode>, expr: Box<ExprNode>) -> Result<StmtNode, String> {
+        let access_tp = access.tp();
+        let expr_tp = expr.tp();
+
+        if let Type::Array {
+            of: _,
+            tag: _,
+            length: _,
+        } = access_tp
+        {
+            return Err(String::from("Type Error"));
+        }
+
+        if let Type::Array {
+            of: _,
+            tag: _,
+            length: _,
+        } = expr_tp
+        {
+            return Err(String::from("Type Error"));
+        }
+
+        if access_tp == expr_tp || (access_tp.is_numeric() && expr_tp.is_numeric()) {
+            if let ExprNode::Access(_, array, index, _) = *access {
+                return Ok(StmtNode::SetElem(array, index, expr));
+            }
+        }
+
+        Err(String::from("Type error"))
+    }
+
+    pub fn box_setelem(id: Box<ExprNode>, expr: Box<ExprNode>) -> Result<Box<StmtNode>, String> {
+        let setelem = StmtNode::new_setelem(id, expr)?;
+        Ok(Box::new(setelem))
+    }
+
+    pub fn new_seq(head: Box<StmtNode>, tail: Box<StmtNode>) -> StmtNode {
+        StmtNode::Seq(head, tail)
+    }
+
+    pub fn box_seq(head: Box<StmtNode>, tail: Box<StmtNode>) -> Box<StmtNode> {
+        Box::new(StmtNode::new_seq(head, tail))
+    }
+
+    pub fn new_if(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<StmtNode, String> {
+        if *cond.tp() != Type::bool() {
+            return Err(String::from("Boolean required in if"));
+        }
+        Ok(StmtNode::If(cond, body))
+    }
+
+    pub fn box_if(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<Box<StmtNode>, String> {
+        let is = StmtNode::new_if(cond, body)?;
+        Ok(Box::new(is))
+    }
+
+    pub fn new_else(
+        cond: Box<ExprNode>,
+        true_stmt: Box<StmtNode>,
+        false_stmt: Box<StmtNode>,
+    ) -> Result<StmtNode, String> {
+        if *cond.tp() != Type::bool() {
+            return Err(String::from("Boolean required in if"));
+        }
+        Ok(StmtNode::Else(cond, true_stmt, false_stmt))
+    }
+
+    pub fn box_else(
+        cond: Box<ExprNode>,
+        true_stmt: Box<StmtNode>,
+        false_stmt: Box<StmtNode>,
+    ) -> Result<Box<StmtNode>, String> {
+        let es = StmtNode::new_else(cond, true_stmt, false_stmt)?;
+        Ok(Box::new(es))
+    }
+
+    pub fn new_while(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<StmtNode, String> {
+        if *cond.tp() != Type::bool() {
+            return Err(String::from("Boolean required in while"));
+        }
+        Ok(StmtNode::While(cond, body))
+    }
+
+    pub fn box_while(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<Box<StmtNode>, String> {
+        let ws = StmtNode::new_while(cond, body)?;
+        Ok(Box::new(ws))
+    }
+
+    pub fn new_do(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<StmtNode, String> {
+        if *cond.tp() != Type::bool() {
+            return Err(String::from("Boolean required in do"));
+        }
+        Ok(StmtNode::Do(cond, body))
+    }
+
+    pub fn box_do(cond: Box<ExprNode>, body: Box<StmtNode>) -> Result<Box<StmtNode>, String> {
+        let ds = StmtNode::new_do(cond, body)?;
+        Ok(Box::new(ds))
+    }
+
+    pub fn new_break() -> StmtNode {
+        StmtNode::Break(Rc::new(RefCell::new(0)))
+    }
+
+    pub fn box_break() -> Box<StmtNode> {
+        Box::new(StmtNode::new_break())
+    }
+
+    pub fn new_funcdef(
+        id: Box<ExprNode>,
+        body: Box<StmtNode>,
+        used: i32,
+    ) -> Result<StmtNode, String> {
+        if !id.is_id() && !id.tp().is_function() {
+            return Err(String::from("Type Error"));
+        }
+        Ok(StmtNode::FuncDef(id, body, used))
+    }
+
+    pub fn box_funcdef(
+        id: Box<ExprNode>,
+        body: Box<StmtNode>,
+        used: i32,
+    ) -> Result<Box<StmtNode>, String> {
+        let fd = StmtNode::new_funcdef(id, body, used)?;
+        Ok(Box::new(fd))
+    }
+
+    pub fn new_return(expr: Option<Box<ExprNode>>) -> StmtNode {
+        StmtNode::Return(
+            Rc::new(RefCell::new(0)),
+            expr,
+            Rc::new(RefCell::new(Type::Void)),
         )
     }
 
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        self.params.iter().for_each(|e| {
-            let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction =
-                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
-            tac_ir.push(instruction);
-        });
-        let temp = Temp::new(self.id.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(
-            TACOperator::CALL,
-            self.id.reduce_tac(tac_ir.clone()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction);
-        result
+    pub fn box_return(expr: Option<Box<ExprNode>>) -> Box<StmtNode> {
+        Box::new(StmtNode::new_return(expr))
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct Arith {
-    tp: Token, //type
-    op: Token,
-    temp_count: Rc<RefCell<u32>>,
-    expr1: ExprUnion,
-    expr2: ExprUnion,
-}
-
-impl Arith {
-    pub fn new(
-        op: Token,
-        temp_count: Rc<RefCell<u32>>,
-        expr1: ExprUnion,
-        expr2: ExprUnion,
-    ) -> Result<Self, &'static str> {
-        match expr1.get_type() {
-            Token::Int(s1) => match expr2.get_type() {
-                Token::Int(_) => Ok(Arith {
-                    tp: Token::Int(s1),
-                    op,
-                    temp_count,
-                    expr1,
-                    expr2,
-                }),
-                Token::Float(s2) => Ok(Arith {
-                    tp: Token::Float(s2),
-                    op,
-                    temp_count,
-                    expr1,
-                    expr2,
-                }),
-                _ => Err("wrong expression type"),
-            },
-            Token::Float(s1) => match expr2.get_type() {
-                Token::Int(_) => Ok(Arith {
-                    tp: Token::Float(s1),
-                    op,
-                    temp_count,
-                    expr1,
-                    expr2,
-                }),
-                Token::Float(s2) => Ok(Arith {
-                    tp: Token::Float(s2),
-                    op,
-                    temp_count,
-                    expr1,
-                    expr2,
-                }),
-                _ => Err("wrong expression type"),
-            },
-            _ => Err("wrong expression type"),
-        }
-    }
-}
-
-impl ExprNode for Arith {
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let e1 = self.expr1.reduce_tac(tac_ir.clone());
-        let e2 = self.expr2.reduce_tac(tac_ir.clone());
-
-        match self.op {
-            Token::Add(_) => (TACOperator::ADD, e1, e2),
-            Token::Sub(_) => (TACOperator::SUB, e1, e2),
-            Token::Mul(_) => (TACOperator::MUL, e1, e2),
-            Token::Div(_) => (TACOperator::DIV, e1, e2),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
+    pub fn new_funccall(expr: Box<ExprNode>) -> Result<StmtNode, String> {
+        match *expr {
+            ExprNode::FuncCall(_, _, _, _) => Ok(StmtNode::FuncCall(expr)),
+            _ => Err(String::from("Type Error")),
         }
     }
 
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-        let (op, arg1, arg2) = self.gen_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Temp {
-    tp: Token, //type
-    number: u32,
-}
-
-impl Temp {
-    pub fn new(tp: Token, temp_count: Rc<RefCell<u32>>) -> Self {
-        let mut c = temp_count.borrow_mut();
-        *c += 1;
-        let number = *c;
-        drop(c);
-        Temp { tp, number }
-    }
-}
-
-impl ExprNode for Temp {
-    fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        match self.tp {
-            Token::Int(_) => (
-                TACOperator::NONE,
-                TACOperand::TEMP_INT(format!("t{}", self.number)),
-                TACOperand::NULL,
-            ),
-            Token::Float(_) => (
-                TACOperator::NONE,
-                TACOperand::TEMP_FLOAT(format!("t{}", self.number)),
-                TACOperand::NULL,
-            ),
-            Token::Bool(_) => (
-                TACOperator::NONE,
-                TACOperand::TEMP_BOOL(format!("t{}", self.number)),
-                TACOperand::NULL,
-            ),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
-        }
+    pub fn box_funccall(expr: Box<ExprNode>) -> Result<Box<StmtNode>, String> {
+        let funccall = StmtNode::new_funccall(expr)?;
+        Ok(Box::new(funccall))
     }
 
-    fn reduce_tac(&self, _tac_ir: TACState) -> TACOperand {
-        match self.tp {
-            Token::Int(_) => TACOperand::TEMP_INT(format!("t{}", self.number)),
-            Token::Float(_) => TACOperand::TEMP_FLOAT(format!("t{}", self.number)),
-            Token::Bool(_) => TACOperand::TEMP_BOOL(format!("t{}", self.number)),
-            _ => TACOperand::NULL,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Unary {
-    tp: Token, //type
-    op: Token,
-    temp_count: Rc<RefCell<u32>>,
-    expr: ExprUnion,
-}
-
-impl Unary {
-    pub fn new(op: Token, temp_count: Rc<RefCell<u32>>, expr: ExprUnion) -> Self {
-        Unary {
-            tp: expr.get_type(),
-            op,
-            temp_count,
-            expr,
-        }
-    }
-}
-
-impl ExprNode for Unary {
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let arg1 = self.expr.reduce_tac(tac_ir.clone());
-        let op = match self.op {
-            Token::Sub(_) => TACOperator::SUB,
-            _ => TACOperator::NONE,
-        };
-        (op, arg1, TACOperand::NULL)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-        let (op, arg1, arg2) = self.gen_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Constant {
-    tp: Token,
-    constant: Token,
-}
-
-impl Constant {
-    pub fn new(tp: Token, constant: Token) -> Self {
-        Constant { tp, constant }
-    }
-}
-
-impl ExprNode for Constant {
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        match self.constant {
-            Token::True(_) => {
-                if t != 0 {
-                    let instruction = TACInstruction::new(
-                        TACOperator::GOTO,
-                        TACOperand::NULL,
-                        TACOperand::NULL,
-                        TACOperand::LABEL(format!("{}", t)),
-                    );
-                    tac_ir.push(instruction);
+    pub fn gen(&self, ir: &mut TACIr, begin: i64, after: i64) -> Result<(), String> {
+        match self {
+            StmtNode::Set(id, expr) => {
+                let e = expr.gen(ir)?;
+                let tac = match *e {
+                    ExprNode::Arith(_, _, left, right) => TACInstruction::new(
+                        expr.operator_to_tac()?,
+                        left.operand_to_tac()?,
+                        right.operand_to_tac()?,
+                        id.operand_to_tac()?,
+                    ),
+                    ExprNode::Unary(_, _, unary) => TACInstruction::new(
+                        expr.operator_to_tac()?,
+                        TACOperand::Null,
+                        unary.operand_to_tac()?,
+                        id.operand_to_tac()?,
+                    ),
+                    _ => TACInstruction::new(
+                        TACOperator::Assign,
+                        e.operand_to_tac()?,
+                        TACOperand::Null,
+                        id.operand_to_tac()?,
+                    ),
+                };
+                emit(ir, tac);
+            }
+            StmtNode::SetElem(array, index, expr) => {
+                let i = index.reduce(ir)?;
+                let e = expr.reduce(ir)?;
+                let tac = TACInstruction::new(
+                    TACOperator::Assign,
+                    e.operand_to_tac()?,
+                    TACOperand::Null,
+                    TACOperand::Array(
+                        array.to_string(),
+                        i.to_string(),
+                        array.tp().to_owned(),
+                        array.return_offset()?,
+                    ),
+                );
+                emit(ir, tac);
+            }
+            StmtNode::Seq(head, tail) => {
+                if head.is_null() {
+                    tail.gen(ir, begin, after)?;
+                } else if tail.is_null() {
+                    head.gen(ir, begin, after)?;
+                } else {
+                    let label = new_label();
+                    head.gen(ir, begin, label)?;
+                    emit_label(ir, label);
+                    tail.gen(ir, label, after)?;
                 }
             }
-            Token::False(_) => {
-                if f != 0 {
-                    let instruction = TACInstruction::new(
-                        TACOperator::GOTO,
-                        TACOperand::NULL,
-                        TACOperand::NULL,
-                        TACOperand::LABEL(format!("{}", f)),
-                    );
-                    tac_ir.push(instruction);
+            StmtNode::If(cond, body) => {
+                let label = new_label();
+                cond.jumping(ir, 0, after)?;
+                emit_label(ir, label);
+                body.gen(ir, label, after)?;
+            }
+            StmtNode::Else(cond, true_stmt, false_stmt) => {
+                let label_if = new_label();
+                let label_else = new_label();
+                cond.jumping(ir, 0, label_else)?;
+                emit_label(ir, label_if);
+                true_stmt.gen(ir, label_if, after)?;
+                let tac = TACInstruction::new(
+                    TACOperator::Goto,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Label(after),
+                );
+                emit(ir, tac);
+                emit_label(ir, label_else);
+                false_stmt.gen(ir, label_else, after)?;
+            }
+            StmtNode::While(cond, body) => {
+                self.after(after);
+                cond.jumping(ir, 0, after)?;
+                let label = new_label();
+                emit_label(ir, label);
+                body.gen(ir, label, begin)?;
+                let tac = TACInstruction::new(
+                    TACOperator::Goto,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Label(begin),
+                );
+                emit(ir, tac);
+            }
+            StmtNode::Do(cond, body) => {
+                self.after(after);
+                let label = new_label();
+                body.gen(ir, begin, label)?;
+                emit_label(ir, label);
+                cond.jumping(ir, begin, 0)?;
+            }
+            StmtNode::Break(after) => {
+                let a = after.borrow();
+                if *a == 0 {
+                    return Err(String::from("Unenclosed break"));
                 }
+                let tac = TACInstruction::new(
+                    TACOperator::Goto,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Label(*a),
+                );
+                emit(ir, tac);
+            }
+            StmtNode::FuncDef(id, body, used) => {
+                self.return_label(after);
+                let ret_tp = id.return_tp()?;
+                self.ret(&ret_tp)?;
+                emit_function(ir, id.to_string(), ret_tp);
+                let tac_begin = TACInstruction::new(
+                    TACOperator::Begin(*used),
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                );
+                let tac_end = TACInstruction::new(
+                    TACOperator::End(*used),
+                    TACOperand::Null,
+                    TACOperand::Null,
+                    TACOperand::Null,
+                );
+                emit(ir, tac_begin);
+                emit_label(ir, begin);
+                body.gen(ir, begin, after)?;
+                emit_label(ir, after);
+                emit(ir, tac_end);
+            }
+            StmtNode::Return(return_label, expr, tp) => match expr {
+                Some(e) => {
+                    let rl = return_label.borrow();
+                    if *rl == 0 {
+                        return Err(String::from("No return label found"));
+                    }
+                    let rtp = tp.borrow();
+                    let return_value = e.reduce(ir)?;
+                    let tac_return = TACInstruction::new(
+                        TACOperator::Ret(rtp.to_owned()),
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        return_value.operand_to_tac()?,
+                    );
+                    let tac_goto = TACInstruction::new(
+                        TACOperator::Goto,
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        TACOperand::Label(*rl),
+                    );
+                    emit(ir, tac_return);
+                    emit(ir, tac_goto);
+                }
+                None => {
+                    let rl = return_label.borrow();
+                    if *rl == 0 {
+                        return Err(String::from("No return label found"));
+                    }
+                    let tac_return = TACInstruction::new(
+                        TACOperator::Ret(Type::Void),
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        TACOperand::Null,
+                    );
+                    let tac_goto = TACInstruction::new(
+                        TACOperator::Goto,
+                        TACOperand::Null,
+                        TACOperand::Null,
+                        TACOperand::Label(*rl),
+                    );
+                    emit(ir, tac_return);
+                    emit(ir, tac_goto);
+                }
+            },
+            StmtNode::FuncCall(expr) => {
+                expr.void_funccall(ir)?;
+            }
+            _ => (),
+        }
+        Ok(())
+    }
+
+    fn after(&self, label: i64) {
+        match self {
+            StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
+                s1.after(label);
+                s2.after(label);
+            }
+            StmtNode::If(_, body) | StmtNode::While(_, body) | StmtNode::Do(_, body) => {
+                body.after(label);
+            }
+            StmtNode::Break(after) => {
+                let mut a = after.borrow_mut();
+                *a = label;
             }
             _ => (),
         }
     }
 
-    fn gen_tac(&self, _tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        match self.tp {
-            Token::Int(_) => (
-                TACOperator::NONE,
-                TACOperand::CONST_INT(self.constant.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            Token::Float(_) => (
-                TACOperator::NONE,
-                TACOperand::CONST_FLOAT(self.constant.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            Token::Bool(_) => (
-                TACOperator::NONE,
-                TACOperand::CONST_BOOL(self.constant.to_owned().value_to_string()),
-                TACOperand::NULL,
-            ),
-            _ => (TACOperator::NONE, TACOperand::NULL, TACOperand::NULL),
-        }
-    }
-
-    fn reduce_tac(&self, _tac_ir: TACState) -> TACOperand {
-        match self.tp {
-            Token::Int(_) => TACOperand::CONST_INT(self.constant.to_owned().value_to_string()),
-            Token::Float(_) => TACOperand::CONST_FLOAT(self.constant.to_owned().value_to_string()),
-            Token::Bool(_) => TACOperand::CONST_BOOL(self.constant.to_owned().value_to_string()),
-            _ => TACOperand::NULL,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Or {
-    tp: Token, //type
-    label: Rc<RefCell<u32>>,
-    temp_count: Rc<RefCell<u32>>,
-    expr1: ExprUnion,
-    expr2: ExprUnion,
-}
-
-impl Or {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        temp_count: Rc<RefCell<u32>>,
-        expr1: ExprUnion,
-        expr2: ExprUnion,
-    ) -> Result<Self, &'static str> {
-        if let Token::Bool(s1) = expr1.get_type() {
-            if let Token::Bool(_) = expr2.get_type() {
-                return Ok(Or {
-                    tp: Token::Bool(s1),
-                    label,
-                    temp_count,
-                    expr1,
-                    expr2,
-                });
+    fn return_label(&self, label: i64) {
+        match self {
+            StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
+                s1.return_label(label);
+                s2.return_label(label);
             }
-        }
-        Err("wrong expression type")
-    }
-}
-
-impl ExprNode for Or {
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        let mut new_label = t;
-        if t == 0 {
-            let mut l = self.label.borrow_mut();
-            *l += 1;
-            new_label = *l;
-            drop(l);
-        }
-        self.expr1.jumping(tac_ir.clone(), new_label, 0);
-        self.expr2.jumping(tac_ir.clone(), t, f);
-        if t == 0 {
-            self.emit_label(tac_ir.clone(), new_label);
-        }
-    }
-
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let op = TACOperator::OR;
-        let arg1 = self.expr1.reduce_tac(tac_ir.clone());
-        let arg2 = self.expr2.reduce_tac(tac_ir.clone());
-        (op, arg1, arg2)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let f = *l;
-        *l += 1;
-        let a = *l;
-        drop(l);
-
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-
-        self.jumping(tac_ir.clone(), 0, f);
-
-        let instruction1 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("true".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction1);
-
-        let instruction2 = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", a)),
-        );
-        tac_ir.push(instruction2);
-
-        self.emit_label(tac_ir.clone(), f);
-
-        let instruction3 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("false".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction3);
-
-        self.emit_label(tac_ir.clone(), a);
-
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct And {
-    tp: Token, //type
-    label: Rc<RefCell<u32>>,
-    temp_count: Rc<RefCell<u32>>,
-    expr1: ExprUnion,
-    expr2: ExprUnion,
-}
-
-impl And {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        temp_count: Rc<RefCell<u32>>,
-        expr1: ExprUnion,
-        expr2: ExprUnion,
-    ) -> Result<Self, &'static str> {
-        if let Token::Bool(s1) = expr1.get_type() {
-            if let Token::Bool(_) = expr2.get_type() {
-                return Ok(And {
-                    tp: Token::Bool(s1),
-                    label,
-                    temp_count,
-                    expr1,
-                    expr2,
-                });
+            StmtNode::If(_, body) | StmtNode::While(_, body) | StmtNode::Do(_, body) => {
+                body.return_label(label);
             }
-        }
-        Err("wrong expression type")
-    }
-}
-
-impl ExprNode for And {
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        let mut new_label = f;
-        if f == 0 {
-            let mut l = self.label.borrow_mut();
-            *l += 1;
-            new_label = *l;
-            drop(l);
-        }
-        self.expr1.jumping(tac_ir.clone(), 0, new_label);
-        self.expr2.jumping(tac_ir.clone(), t, f);
-        if f == 0 {
-            self.emit_label(tac_ir.clone(), new_label);
-        }
-    }
-
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let op = TACOperator::AND;
-        let arg1 = self.expr1.reduce_tac(tac_ir.clone());
-        let arg2 = self.expr2.reduce_tac(tac_ir.clone());
-        (op, arg1, arg2)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let f = *l;
-        *l += 1;
-        let a = *l;
-        drop(l);
-
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-
-        self.jumping(tac_ir.clone(), 0, f);
-
-        let instruction1 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("true".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction1);
-
-        let instruction2 = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", a)),
-        );
-        tac_ir.push(instruction2);
-
-        self.emit_label(tac_ir.clone(), f);
-
-        let instruction3 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("false".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction3);
-
-        self.emit_label(tac_ir.clone(), a);
-
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Not {
-    tp: Token,
-    label: Rc<RefCell<u32>>,
-    temp_count: Rc<RefCell<u32>>,
-    expr: ExprUnion,
-}
-
-impl Not {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        temp_count: Rc<RefCell<u32>>,
-        expr: ExprUnion,
-    ) -> Result<Self, &'static str> {
-        if let Token::Bool(s) = expr.get_type() {
-            return Ok(Not {
-                tp: Token::Bool(s),
-                label,
-                temp_count,
-                expr,
-            });
-        }
-        Err("wrong expression type")
-    }
-}
-
-impl ExprNode for Not {
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        self.expr.jumping(tac_ir.clone(), f, t);
-    }
-
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let arg1 = self.reduce_tac(tac_ir.clone());
-        (TACOperator::NONE, arg1, TACOperand::NULL)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let f = *l;
-        *l += 1;
-        let a = *l;
-        drop(l);
-
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-
-        self.jumping(tac_ir.clone(), 0, f);
-
-        let instruction1 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("true".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction1);
-
-        let instruction2 = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", a)),
-        );
-        tac_ir.push(instruction2);
-
-        self.emit_label(tac_ir.clone(), f);
-
-        let instruction3 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("false".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction3);
-
-        self.emit_label(tac_ir.clone(), a);
-
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Rel {
-    tp: Token,
-    op: Token,
-    label: Rc<RefCell<u32>>,
-    temp_count: Rc<RefCell<u32>>,
-    expr1: ExprUnion,
-    expr2: ExprUnion,
-}
-
-impl Rel {
-    pub fn new(
-        op: Token,
-        label: Rc<RefCell<u32>>,
-        temp_count: Rc<RefCell<u32>>,
-        expr1: ExprUnion,
-        expr2: ExprUnion,
-    ) -> Result<Self, &'static str> {
-        if expr1.get_type() == expr2.get_type() {
-            Ok(Rel {
-                tp: Token::Bool(String::from("bool")),
-                op,
-                label,
-                temp_count,
-                expr1,
-                expr2,
-            })
-        } else {
-            Err("wrong expression type")
-        }
-    }
-}
-
-impl ExprNode for Rel {
-    fn jumping(&self, tac_ir: TACState, t: u32, f: u32) {
-        let op = match self.op {
-            Token::Eql(_) => TACOperator::EQ,
-            Token::Ne(_) => TACOperator::NEQ,
-            Token::Lt(_) => TACOperator::LT,
-            Token::Le(_) => TACOperator::LE,
-            Token::Gt(_) => TACOperator::GT,
-            Token::Ge(_) => TACOperator::GE,
-            _ => TACOperator::NONE,
-        };
-        let arg1 = self.expr1.reduce_tac(tac_ir.clone());
-        let arg2 = self.expr2.reduce_tac(tac_ir.clone());
-
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-
-        self.emit_jumps(tac_ir.clone(), result, t, f);
-    }
-
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let op = match self.op {
-            Token::Eql(_) => TACOperator::EQ,
-            Token::Ne(_) => TACOperator::NEQ,
-            Token::Lt(_) => TACOperator::LT,
-            Token::Le(_) => TACOperator::LE,
-            Token::Gt(_) => TACOperator::GT,
-            Token::Ge(_) => TACOperator::GE,
-            _ => TACOperator::NONE,
-        };
-        let arg1 = self.expr1.reduce_tac(tac_ir.clone());
-        let arg2 = self.expr2.reduce_tac(tac_ir.clone());
-        (op, arg1, arg2)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let f = *l;
-        *l += 1;
-        let a = *l;
-        drop(l);
-
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let result = temp.reduce_tac(tac_ir.clone());
-
-        self.jumping(tac_ir.clone(), 0, f);
-
-        let instruction1 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("true".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction1);
-
-        let instruction2 = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", a)),
-        );
-        tac_ir.push(instruction2);
-
-        self.emit_label(tac_ir.clone(), f);
-
-        let instruction3 = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::CONST_BOOL("false".to_string()),
-            TACOperand::NULL,
-            result.to_owned(),
-        );
-        tac_ir.push(instruction3);
-
-        self.emit_label(tac_ir.clone(), a);
-
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Access {
-    tp: Token, //type
-    _token: Token,
-    temp_count: Rc<RefCell<u32>>,
-    array: Id,
-    index: ExprUnion,
-}
-
-impl Access {
-    pub fn new(tp: Token, temp_count: Rc<RefCell<u32>>, array: Id, index: ExprUnion) -> Self {
-        Access {
-            tp,
-            _token: Token::Id(String::from("[]")),
-            temp_count,
-            array,
-            index,
-        }
-    }
-}
-
-impl ExprNode for Access {
-    fn gen_tac(&self, tac_ir: TACState) -> (TACOperator, TACOperand, TACOperand) {
-        let operand1 = self.array.reduce_tac(tac_ir.clone());
-        let operand2 = self.index.reduce_tac(tac_ir.clone());
-        let arg1 = TACOperand::ACCESS(Box::new(operand1), Box::new(operand2));
-        (TACOperator::NONE, arg1, TACOperand::NULL)
-    }
-
-    fn reduce_tac(&self, tac_ir: TACState) -> TACOperand {
-        let temp = Temp::new(self.tp.clone(), Rc::clone(&self.temp_count));
-        let (op, arg1, arg2) = self.gen_tac(tac_ir.clone());
-        let result = temp.reduce_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-        result
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct If {
-    label: Rc<RefCell<u32>>,
-    expr: ExprUnion,
-    stmt: StmtUnion,
-}
-
-impl If {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        expr: ExprUnion,
-        stmt: StmtUnion,
-    ) -> Result<Self, &'static str> {
-        if let Token::Bool(_) = expr.get_type() {
-            Ok(If { label, expr, stmt })
-        } else {
-            Err("wrong expression type")
-        }
-    }
-}
-
-impl StmtNode for If {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, a: u32) {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let new_label = *l;
-        drop(l);
-        self.expr.jumping(tac_ir.clone(), 0, a);
-        self.emit_label(tac_ir.clone(), new_label);
-        self.stmt.gen_tac(tac_ir.clone(), new_label, a);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Else {
-    label: Rc<RefCell<u32>>,
-    expr: ExprUnion,
-    stmt1: StmtUnion,
-    stmt2: StmtUnion,
-}
-
-impl Else {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        expr: ExprUnion,
-        stmt1: StmtUnion,
-        stmt2: StmtUnion,
-    ) -> Result<Self, &'static str> {
-        if let Token::Bool(_) = expr.get_type() {
-            Ok(Else {
-                label,
-                expr,
-                stmt1,
-                stmt2,
-            })
-        } else {
-            Err("wrong expression type")
-        }
-    }
-}
-
-impl StmtNode for Else {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, a: u32) {
-        let mut l = self.label.borrow_mut();
-        *l += 1;
-        let new_label1 = *l;
-        *l += 1;
-        let new_label2 = *l;
-        drop(l);
-
-        self.expr.jumping(tac_ir.clone(), 0, new_label2);
-        self.emit_label(tac_ir.clone(), new_label1);
-        self.stmt1.gen_tac(tac_ir.clone(), new_label1, a);
-        let instruction = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", a)),
-        );
-        tac_ir.push(instruction);
-
-        self.emit_label(tac_ir.clone(), new_label2);
-        self.stmt2.gen_tac(tac_ir.clone(), new_label2, a);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct While {
-    label: Rc<RefCell<u32>>,
-    after: Rc<RefCell<u32>>,
-    expr: Option<ExprUnion>,
-    stmt: Option<StmtUnion>,
-}
-
-impl While {
-    pub fn new(label: Rc<RefCell<u32>>, after: Rc<RefCell<u32>>) -> Self {
-        While {
-            label,
-            after,
-            expr: None,
-            stmt: None,
-        }
-    }
-    pub fn init(
-        &mut self,
-        expr: Option<ExprUnion>,
-        stmt: Option<StmtUnion>,
-    ) -> Result<(), &'static str> {
-        match expr {
-            Some(x) => {
-                if let Token::Bool(_) = x.get_type() {
-                    self.expr = Some(x);
-                    self.stmt = stmt;
-                    Ok(())
-                } else {
-                    Err("wrong expression type")
-                }
+            StmtNode::FuncDef(_, body, _) => {
+                body.return_label(label);
             }
-            None => Err("expression missing"),
-        }
-    }
-}
-
-impl StmtNode for While {
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
-        if let Some(e) = &self.expr {
-            if let Some(s) = &self.stmt {
-                let mut after_lock = self.after.borrow_mut();
-                *after_lock = a;
-                drop(after_lock);
-
-                e.jumping(tac_ir.clone(), 0, a);
-
-                let mut l = self.label.borrow_mut();
-                *l += 1;
-                let new_label = *l;
-                drop(l);
-                self.emit_label(tac_ir.clone(), new_label);
-                s.gen_tac(tac_ir.clone(), new_label, b);
-                let instruction = TACInstruction::new(
-                    TACOperator::GOTO,
-                    TACOperand::NULL,
-                    TACOperand::NULL,
-                    TACOperand::LABEL(format!("L{}", b)),
-                );
-                tac_ir.push(instruction);
+            StmtNode::Return(return_label, _, _) => {
+                let mut rl = return_label.borrow_mut();
+                *rl = label;
             }
+            _ => (),
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct Set {
-    id: Id,
-    expr: ExprUnion,
-}
-
-impl Set {
-    pub fn new(id: Id, expr: ExprUnion) -> Result<Self, &'static str> {
-        if id.tp == expr.get_type() {
-            Ok(Set { id, expr })
-        } else {
-            Err("variable and value types do not match")
-        }
-    }
-}
-
-impl StmtNode for Set {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
-        let result = self.id.reduce_tac(tac_ir.clone());
-        let (op, arg1, arg2) = self.expr.gen_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SetElem {
-    array: Id,
-    index: ExprUnion,
-    expr: ExprUnion,
-}
-
-impl SetElem {
-    pub fn new(x: Access, y: ExprUnion) -> Result<Self, &'static str> {
-        if let Token::Arr(_) = x.tp {
-            return Err("can not assign to instance of type array");
-        }
-        if let Token::Arr(_) = y.get_type() {
-            return Err("can not assign a value of type array");
-        }
-        if x.tp == y.get_type() {
-            Ok(SetElem {
-                array: x.array,
-                index: x.index,
-                expr: y,
-            })
-        } else {
-            Err("variable and value types do not match")
-        }
-    }
-}
-
-impl StmtNode for SetElem {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
-        let operand1 = self.array.reduce_tac(tac_ir.clone());
-        let operand2 = self.index.reduce_tac(tac_ir.clone());
-        let result = TACOperand::ACCESS(Box::new(operand1), Box::new(operand2));
-        let (op, arg1, arg2) = self.expr.gen_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(op, arg1, arg2, result.to_owned());
-        tac_ir.push(instruction);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Seq {
-    label: Rc<RefCell<u32>>,
-    stmt1: Option<StmtUnion>,
-    stmt2: Option<StmtUnion>,
-}
-
-impl Seq {
-    pub fn new(
-        label: Rc<RefCell<u32>>,
-        stmt1: Option<StmtUnion>,
-        stmt2: Option<StmtUnion>,
-    ) -> Self {
-        Seq {
-            label,
-            stmt1,
-            stmt2,
-        }
-    }
-}
-
-impl StmtNode for Seq {
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
-        match &self.stmt1 {
-            Some(s1) => match &self.stmt2 {
-                Some(s2) => {
-                    let mut l = self.label.borrow_mut();
-                    *l += 1;
-                    let new_label = *l;
-                    drop(l);
-                    s1.gen_tac(tac_ir.clone(), b, new_label);
-                    self.emit_label(tac_ir.clone(), new_label);
-                    s2.gen_tac(tac_ir.clone(), new_label, a);
-                }
+    fn ret(&self, tp: &Type) -> Result<(), String> {
+        match self {
+            StmtNode::Seq(s1, s2) | StmtNode::Else(_, s1, s2) => {
+                s1.ret(tp)?;
+                s2.ret(tp)?;
+            }
+            StmtNode::FuncDef(_, body, _)
+            | StmtNode::If(_, body)
+            | StmtNode::While(_, body)
+            | StmtNode::Do(_, body) => body.ret(tp)?,
+            StmtNode::Return(_, expr, return_tp) => match expr {
+                Some(e) => match Type::max_type(tp, e.tp()) {
+                    Some(max_tp) => {
+                        if max_tp != *tp {
+                            return Err(String::from("Type error"));
+                        }
+                        let mut rtp = return_tp.borrow_mut();
+                        *rtp = tp.to_owned();
+                    }
+                    None => return Err(String::from("Type error")),
+                },
                 None => {
-                    s1.gen_tac(tac_ir.clone(), b, a);
+                    if *tp != Type::void() {
+                        return Err(String::from("Type error"));
+                    }
                 }
             },
-            None => match &self.stmt2 {
-                Some(s2) => {
-                    s2.gen_tac(tac_ir.clone(), b, a);
-                }
-                None => (),
-            },
+            _ => (),
         }
+        Ok(())
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct Break {
-    stmt: StmtUnion,
-}
-
-impl Break {
-    pub fn new(stmt: Option<StmtUnion>) -> Result<Self, &'static str> {
-        match stmt {
-            Some(s) => Ok(Break { stmt: s }),
-            None => Err("unenclosed break"),
-        }
-    }
-}
-
-impl StmtNode for Break {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
-        let after = self.stmt.after();
-        let instruction = TACInstruction::new(
-            TACOperator::GOTO,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("L{}", after)),
-        );
-        tac_ir.push(instruction);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Function {
-    name: String,
-    params: Vec<Id>,
-    stmt: Option<StmtUnion>,
-}
-
-impl Function {
-    pub fn new(name: String, params: Vec<Id>, stmt: Option<StmtUnion>) -> Self {
-        Self { name, params, stmt }
-    }
-}
-
-impl StmtNode for Function {
-    fn gen_tac(&self, tac_ir: TACState, b: u32, a: u32) {
-        let instruction = TACInstruction::new(
-            TACOperator::NONE,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::LABEL(format!("{}:", self.name)),
-        );
-        tac_ir.push(instruction);
-
-        self.params.iter().for_each(|id| {
-            let result = id.reduce_tac(tac_ir.clone());
-            let instruction = TACInstruction::new(
-                TACOperator::POP,
-                TACOperand::NULL,
-                TACOperand::NULL,
-                result.to_owned(),
-            );
-            tac_ir.push(instruction);
-        });
-
-        if let Some(s) = &self.stmt {
-            s.gen_tac(tac_ir.clone(), b, a);
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionCall {
-    call: Call,
-}
-
-impl FunctionCall {
-    pub fn new(call: Call) -> Result<Self, &'static str> {
-        if let Token::Void(_) = call.id.tp {
-            Ok(FunctionCall { call })
+    fn is_null(&self) -> bool {
+        if let StmtNode::Null = self {
+            true
         } else {
-            Err("Function called without assignment must be of type void")
+            false
         }
-    }
-}
-
-impl StmtNode for FunctionCall {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
-        self.call.params.iter().for_each(|e| {
-            let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction =
-                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
-            tac_ir.push(instruction);
-        });
-
-        let result = self.call.id.reduce_tac(tac_ir.clone());
-        let instruction = TACInstruction::new(
-            TACOperator::CALL,
-            result,
-            TACOperand::NULL,
-            TACOperand::NULL,
-        );
-        tac_ir.push(instruction);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Return {
-    expr: Option<ExprUnion>,
-}
-
-impl Return {
-    pub fn new(expr: Option<ExprUnion>) -> Self {
-        Self { expr }
-    }
-}
-
-impl StmtNode for Return {
-    fn gen_tac(&self, tac_ir: TACState, _b: u32, _a: u32) {
-        if let Some(e) = &self.expr {
-            let arg1 = e.reduce_tac(tac_ir.clone());
-            let instruction =
-                TACInstruction::new(TACOperator::PUSH, arg1, TACOperand::NULL, TACOperand::NULL);
-            tac_ir.push(instruction);
-        }
-
-        let instruction = TACInstruction::new(
-            TACOperator::RET,
-            TACOperand::NULL,
-            TACOperand::NULL,
-            TACOperand::NULL,
-        );
-        tac_ir.push(instruction);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lexer::Array;
-
-    #[test]
-    fn test_id() {
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = id.gen_tac(tac_ir.clone());
-        let reduced = id.reduce_tac(tac_ir.clone());
-        assert_eq!(tac_ir.len(), 0);
-        assert_eq!(reduced, TACOperand::VAR_INT(String::from("x")));
-        assert_eq!(op, TACOperator::NONE);
-        assert_eq!(arg1, TACOperand::VAR_INT(String::from("x")));
-        assert_eq!(arg2, TACOperand::NULL);
-    }
-
-    #[test]
-    fn test_arith() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let arith = Arith::new(
-            Token::Add(String::from("+")),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = arith.gen_tac(tac_ir.clone());
-        let reduced = arith.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 1);
-        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
-        assert_eq!(op, TACOperator::ADD);
-        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
-        assert_eq!(arg2, TACOperand::CONST_INT(String::from("2")));
-        Ok(())
-    }
-
-    #[test]
-    fn test_temp() {
-        let temp = Temp::new(Token::Int(String::from("int")), Rc::new(RefCell::new(0)));
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = temp.gen_tac(tac_ir.clone());
-        let reduced = temp.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 0);
-        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
-        assert_eq!(op, TACOperator::NONE);
-        assert_eq!(arg1, TACOperand::TEMP_INT(String::from("t1")));
-        assert_eq!(arg2, TACOperand::NULL);
-    }
-
-    #[test]
-    fn test_unary() {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let unary = Unary::new(
-            Token::Sub(String::from("-")),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-        );
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = unary.gen_tac(tac_ir.clone());
-        let reduced = unary.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 1);
-        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
-        assert_eq!(op, TACOperator::SUB);
-        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
-        assert_eq!(arg2, TACOperand::NULL);
-    }
-
-    #[test]
-    fn test_constant() {
-        let constant = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = constant.gen_tac(tac_ir.clone());
-        let reduced = constant.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 0);
-        assert_eq!(reduced, TACOperand::CONST_INT(String::from("1")));
-        assert_eq!(op, TACOperator::NONE);
-        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
-        assert_eq!(arg2, TACOperand::NULL);
-    }
-
-    #[test]
-    fn test_or() -> Result<(), &'static str> {
-        let x = Constant::new(
-            Token::Bool(String::from("bool")),
-            Token::True(String::from("true")),
-        );
-        let y = Constant::new(
-            Token::Bool(String::from("bool")),
-            Token::True(String::from("false")),
-        );
-        let or = Or::new(
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = or.gen_tac(tac_ir.clone());
-        let reduced = or.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 7);
-        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
-        assert_eq!(op, TACOperator::OR);
-        assert_eq!(arg1, TACOperand::CONST_BOOL(String::from("true")));
-        assert_eq!(arg2, TACOperand::CONST_BOOL(String::from("false")));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_and() -> Result<(), &'static str> {
-        let x = Constant::new(
-            Token::Bool(String::from("bool")),
-            Token::True(String::from("true")),
-        );
-        let y = Constant::new(
-            Token::Bool(String::from("bool")),
-            Token::True(String::from("false")),
-        );
-        let and = And::new(
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = and.gen_tac(tac_ir.clone());
-        let reduced = and.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 5);
-        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
-        assert_eq!(op, TACOperator::AND);
-        assert_eq!(arg1, TACOperand::CONST_BOOL(String::from("true")));
-        assert_eq!(arg2, TACOperand::CONST_BOOL(String::from("false")));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_not() -> Result<(), &'static str> {
-        let x = Constant::new(
-            Token::Bool(String::from("bool")),
-            Token::True(String::from("true")),
-        );
-        let not = Not::new(
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = not.gen_tac(tac_ir.clone());
-        let reduced = not.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 12);
-        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t2")));
-        assert_eq!(op, TACOperator::NONE);
-        assert_eq!(arg1, TACOperand::TEMP_BOOL(String::from("t1")));
-        assert_eq!(arg2, TACOperand::NULL);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_rel() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let rel = Rel::new(
-            Token::Le(String::from("<=")),
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = rel.gen_tac(tac_ir.clone());
-        let reduced = rel.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 7);
-        assert_eq!(reduced, TACOperand::TEMP_BOOL(String::from("t1")));
-        assert_eq!(op, TACOperator::LE);
-        assert_eq!(arg1, TACOperand::CONST_INT(String::from("1")));
-        assert_eq!(arg2, TACOperand::CONST_INT(String::from("2")));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_access() {
-        let size = 5;
-        let of = Token::Int(String::from("int"));
-        let w = 4;
-        let tp = Token::Arr(Array::new(size, of, w));
-
-        let array = Id::new(tp, Token::Id(String::from("x")), 0);
-        let index = Constant::new(Token::Int(String::from("int")), Token::Num(0));
-        let access = Access::new(
-            Token::Int(String::from("int")),
-            Rc::new(RefCell::new(0)),
-            array,
-            ExprUnion::Constant(Rc::from(index)),
-        );
-
-        let tac_ir = TACState::new();
-
-        let (op, arg1, arg2) = access.gen_tac(tac_ir.clone());
-        let reduced = access.reduce_tac(tac_ir.clone());
-
-        assert_eq!(tac_ir.len(), 1);
-        assert_eq!(reduced, TACOperand::TEMP_INT(String::from("t1")));
-        assert_eq!(op, TACOperator::NONE);
-        assert_eq!(
-            arg1,
-            TACOperand::ACCESS(
-                Box::new(TACOperand::VAR_INT(String::from("x"))),
-                Box::new(TACOperand::CONST_INT(String::from("0")))
-            )
-        );
-        assert_eq!(arg2, TACOperand::NULL);
-    }
-
-    #[test]
-    fn test_if() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let rel = Rel::new(
-            Token::Le(String::from("<=")),
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
-
-        let if_stmt = If::new(
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Rel(Rc::new(rel)),
-            StmtUnion::Set(Rc::new(set)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        if_stmt.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 4);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_else() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let rel = Rel::new(
-            Token::Le(String::from("<=")),
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let z1 = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let z2 = Constant::new(Token::Int(String::from("int")), Token::Num(4));
-        let id1 = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let id2 = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("y")),
-            0,
-        );
-        let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
-        let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
-
-        let else_stmt = Else::new(
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Rel(Rc::new(rel)),
-            StmtUnion::Set(Rc::new(set1)),
-            StmtUnion::Set(Rc::new(set2)),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        else_stmt.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 7);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_while() -> Result<(), &'static str> {
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let rel = Rel::new(
-            Token::Le(String::from("<=")),
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
-
-        let mut while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
-        while_stmt.init(
-            Some(ExprUnion::Rel(Rc::new(rel))),
-            Some(StmtUnion::Set(Rc::new(set))),
-        )?;
-
-        let tac_ir = TACState::new();
-
-        while_stmt.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 5);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_set() -> Result<(), &'static str> {
-        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let set = Set::new(id, ExprUnion::Constant(Rc::new(z)))?;
-
-        let tac_ir = TACState::new();
-
-        set.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_set_elem() -> Result<(), &'static str> {
-        let size = 5;
-        let of = Token::Int(String::from("int"));
-        let w = 4;
-        let tp = Token::Arr(Array::new(size, of, w));
-
-        let array = Id::new(tp, Token::Id(String::from("x")), 0);
-        let index = Constant::new(Token::Int(String::from("int")), Token::Num(0));
-        let x = Access::new(
-            Token::Int(String::from("int")),
-            Rc::new(RefCell::new(0)),
-            array,
-            ExprUnion::Constant(Rc::from(index)),
-        );
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-
-        let set_elem = SetElem::new(x, ExprUnion::Constant(Rc::new(y)))?;
-
-        let tac_ir = TACState::new();
-
-        set_elem.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_seq() -> Result<(), &'static str> {
-        let z1 = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let z2 = Constant::new(Token::Int(String::from("int")), Token::Num(4));
-        let id1 = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let id2 = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("y")),
-            0,
-        );
-        let set1 = Set::new(id1, ExprUnion::Constant(Rc::new(z1)))?;
-        let set2 = Set::new(id2, ExprUnion::Constant(Rc::new(z2)))?;
-
-        let seq = Seq::new(
-            Rc::new(RefCell::new(0)),
-            Some(StmtUnion::Set(Rc::new(set1))),
-            Some(StmtUnion::Set(Rc::new(set2))),
-        );
-
-        let tac_ir = TACState::new();
-
-        seq.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 3);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_break() -> Result<(), &'static str> {
-        let while_stmt = While::new(Rc::new(RefCell::new(0)), Rc::new(RefCell::new(0)));
-        let break_stmt = Break::new(Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))))?;
-
-        let tac_ir = TACState::new();
-
-        break_stmt.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function() -> Result<(), &'static str> {
-        let label = Rc::new(RefCell::new(1 as u32));
-        let x = Constant::new(Token::Int(String::from("int")), Token::Num(1));
-        let y = Constant::new(Token::Int(String::from("int")), Token::Num(2));
-        let rel = Rel::new(
-            Token::Le(String::from("<=")),
-            Rc::new(RefCell::new(0)),
-            Rc::new(RefCell::new(0)),
-            ExprUnion::Constant(Rc::new(x)),
-            ExprUnion::Constant(Rc::new(y)),
-        )?;
-
-        let z = Constant::new(Token::Int(String::from("int")), Token::Num(3));
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let set = Set::new(id.clone(), ExprUnion::Constant(Rc::new(z)))?;
-
-        let mut while_stmt = While::new(Rc::clone(&label), Rc::new(RefCell::new(1)));
-        while_stmt.init(
-            Some(ExprUnion::Rel(Rc::new(rel))),
-            Some(StmtUnion::Set(Rc::new(set))),
-        )?;
-
-        let function_stmt = Function::new(
-            String::from("f"),
-            vec![id],
-            Some(StmtUnion::While(Rc::new(RefCell::new(while_stmt)))),
-        );
-
-        let tac_ir = TACState::new();
-
-        function_stmt.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 7);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_function_call() -> Result<(), &'static str> {
-        let temp_count = Rc::new(RefCell::new(0));
-        // create calls both with and without FunctionCall wrapper
-        let id_void = Id::new(
-            Token::Void(String::from("void")),
-            Token::Id(String::from("f")),
-            0,
-        );
-        let id_int = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("f")),
-            0,
-        );
-
-        let call_void = Call::new(id_void, vec![], Rc::clone(&temp_count));
-        let call_int = Call::new(id_int, vec![], Rc::clone(&temp_count));
-
-        let function_call_void = FunctionCall::new(call_void)?;
-
-        let id = Id::new(
-            Token::Int(String::from("int")),
-            Token::Id(String::from("x")),
-            0,
-        );
-        let set = Set::new(id, ExprUnion::Call(Rc::new(call_int)))?;
-
-        let tac_ir = TACState::new();
-
-        function_call_void.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 1);
-
-        set.gen_tac(tac_ir.clone(), 1, 2);
-
-        assert_eq!(tac_ir.len(), 2);
-
-        Ok(())
     }
 }

@@ -1,161 +1,204 @@
-/*
- * TAC implementation here.
- * Goals:
- * 1. Easy to form information for activation records
- * 2. As uniform as possible for all different instruction types
- * add more if necessary
- * TODO:
- * re-evaluate the way conditional jumps are recorded
- */
-use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fmt;
-use std::rc::Rc;
+use std::ops::{Deref, DerefMut};
 
-#[allow(non_snake_case)]
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, PartialEq)]
+use crate::inter::{ExprNode, StmtNode, Type};
+
+#[derive(Debug, Clone)]
 pub enum TACOperator {
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    EQ,
-    NEQ,
-    GT,
-    GE,
-    LT,
-    LE,
-    AND,
-    OR,
-    PUSH,
-    POP,
-    GOTO,
-    CALL,
-    RET,
-    NONE,
+    Add,
+    Sub,
+    Div,
+    Mul,
+    Call(i64),
+    Assign,
+    Gt,
+    Lt,
+    Ge,
+    Le,
+    Ret(Type),
+    Param(Type),
+    Begin(i32),
+    End(i32),
+    Goto,
+    If,
+    Iff,
+    Null,
+    Eql,
+    Ne,
+    Not,
+    Or,
+    And,
 }
 
 impl fmt::Display for TACOperator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //Token::Token(tag) => write!(f, "{}", *tag as char),
         match self {
-            TACOperator::ADD => write!(f, "ADD"),
-            TACOperator::SUB => write!(f, "SUB"),
-            TACOperator::MUL => write!(f, "MUL"),
-            TACOperator::DIV => write!(f, "DIV"),
-            TACOperator::EQ => write!(f, "EQ"),
-            TACOperator::NEQ => write!(f, "NEQ"),
-            TACOperator::GT => write!(f, "GT"),
-            TACOperator::GE => write!(f, "GE"),
-            TACOperator::LT => write!(f, "LT"),
-            TACOperator::LE => write!(f, "LE"),
-            TACOperator::AND => write!(f, "AND"),
-            TACOperator::OR => write!(f, "OR"),
-            TACOperator::PUSH => write!(f, "PUSH"),
-            TACOperator::POP => write!(f, "POP"),
-            TACOperator::GOTO => write!(f, "GOTO"),
-            TACOperator::CALL => write!(f, "CALL"),
-            TACOperator::RET => write!(f, "RET"),
-            TACOperator::NONE => write!(f, ""),
+            TACOperator::Add => write!(f, "+"),
+            TACOperator::Sub => write!(f, "-"),
+            TACOperator::Div => write!(f, "/"),
+            TACOperator::Mul => write!(f, "*"),
+            TACOperator::Call(_) => write!(f, "call"),
+            TACOperator::Assign => write!(f, "="),
+            TACOperator::Gt => write!(f, ">"),
+            TACOperator::Lt => write!(f, "<"),
+            TACOperator::Ge => write!(f, ">="),
+            TACOperator::Le => write!(f, "<="),
+            TACOperator::Ret(_) => write!(f, "ret"),
+            TACOperator::Param(_) => write!(f, "param"),
+            TACOperator::Begin(n) => write!(f, "begin {}", n),
+            TACOperator::End(_) => write!(f, "end"),
+            TACOperator::Goto => write!(f, "goto"),
+            TACOperator::If => write!(f, "if"),
+            TACOperator::Iff => write!(f, "iffalse"),
+            TACOperator::Null => write!(f, ""),
+            TACOperator::Eql => write!(f, "=="),
+            TACOperator::Ne => write!(f, "!="),
+            TACOperator::Not => write!(f, "!"),
+            TACOperator::Or => write!(f, "||"),
+            TACOperator::And => write!(f, "&&"),
         }
     }
 }
 
-#[allow(non_camel_case_types)]
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum TACOperand {
-    VAR_INT(String),
-    VAR_FLOAT(String),
-    VAR_BOOL(String),
-    TEMP_INT(String),
-    TEMP_FLOAT(String),
-    TEMP_BOOL(String),
-    CONST_INT(String),
-    CONST_FLOAT(String),
-    CONST_BOOL(String),
-    LABEL(String),
-    ACCESS(Box<TACOperand>, Box<TACOperand>), // a bit wonky, revisit some time
-    IF,
-    IFFALSE,
-    NULL,
+    Var(String, Type, i32),
+    Array(String, String, Type, i32),
+    Temp(String, Type),
+    Label(i64),
+    Function(String, Type),
+    Const(String, Type),
+    True,
+    False,
+    Null,
+}
+
+impl TACOperand {
+    pub fn tp(&self) -> Result<&Type, String> {
+        match self {
+            TACOperand::Var(_, tp, _) => Ok(tp),
+            TACOperand::Array(_, _, tp, _) => Ok(tp),
+            TACOperand::Temp(_, tp) => Ok(tp),
+            TACOperand::Const(_, tp) => Ok(tp),
+            _ => Err(format!("Operand {} has no type", self)),
+        }
+    }
 }
 
 impl fmt::Display for TACOperand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //Token::Token(tag) => write!(f, "{}", *tag as char),
         match self {
-            TACOperand::VAR_INT(s) => write!(f, "{}", s),
-            TACOperand::VAR_FLOAT(s) => write!(f, "{}", s),
-            TACOperand::VAR_BOOL(s) => write!(f, "{}", s),
-            TACOperand::TEMP_INT(s) => write!(f, "{}", s),
-            TACOperand::TEMP_FLOAT(s) => write!(f, "{}", s),
-            TACOperand::TEMP_BOOL(s) => write!(f, "{}", s),
-            TACOperand::CONST_INT(s) => write!(f, "{}", s),
-            TACOperand::CONST_FLOAT(s) => write!(f, "{}", s),
-            TACOperand::CONST_BOOL(s) => write!(f, "{}", s),
-            TACOperand::LABEL(s) => write!(f, "{}", s),
-            TACOperand::ACCESS(operand1, operand2) => {
-                write!(f, "{} [ {} ]", operand1, operand2)
-            }
-            TACOperand::IF => write!(f, "if"),
-            TACOperand::IFFALSE => write!(f, "iffalse"),
-            TACOperand::NULL => write!(f, ""),
+            TACOperand::Var(s, _, _) => write!(f, "{}", s),
+            TACOperand::Array(s1, s2, _, _) => write!(f, "{} [{}]", s1, s2),
+            TACOperand::Temp(s, _) => write!(f, "{}", s),
+            TACOperand::Label(n) => write!(f, "L{}", n),
+            TACOperand::Function(s, _) => write!(f, "{}", s),
+            TACOperand::Const(s, _) => write!(f, "{}", s),
+            TACOperand::True => write!(f, "true"),
+            TACOperand::False => write!(f, "false"),
+            TACOperand::Null => write!(f, ""),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TACInstruction {
-    op: TACOperator,
-    arg1: TACOperand,
-    arg2: TACOperand,
-    result: TACOperand,
+    pub op: TACOperator,
+    pub arg1: TACOperand,
+    pub arg2: TACOperand,
+    pub res: TACOperand,
 }
 
 impl TACInstruction {
-    pub fn new(op: TACOperator, arg1: TACOperand, arg2: TACOperand, result: TACOperand) -> Self {
+    pub fn new(op: TACOperator, arg1: TACOperand, arg2: TACOperand, res: TACOperand) -> Self {
         TACInstruction {
             op,
             arg1,
             arg2,
-            result,
+            res,
         }
     }
 }
 
-// TODO: implement methods for TACState (clone, new etc.)
-pub struct TACState(Rc<RefCell<Vec<TACInstruction>>>);
-
-impl TACState {
-    pub fn new() -> Self {
-        TACState(Rc::new(RefCell::new(Vec::<TACInstruction>::new())))
-    }
-
-    pub fn push(&self, instruction: TACInstruction) {
-        let mut state = self.0.borrow_mut();
-        state.push(instruction);
-        drop(state);
-    }
-
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        let size = self.0.borrow().len();
-        size
-    }
-
-    pub fn print(&self) {
-        let tac_ir = self.0.borrow().to_vec();
-        tac_ir.into_iter().for_each(|instruction| {
-            let s = format!(
-                "{} {} {} {}",
-                instruction.op, instruction.result, instruction.arg1, instruction.arg2
-            );
-            println!("{}", s.split_whitespace().collect::<Vec<_>>().join(" "));
-        });
+impl fmt::Display for TACInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = &self.op;
+        let arg1 = &self.arg1;
+        let arg2 = &self.arg2;
+        let res = &self.res;
+        match op {
+            TACOperator::Add
+            | TACOperator::Sub
+            | TACOperator::Div
+            | TACOperator::Mul
+            | TACOperator::Gt
+            | TACOperator::Lt
+            | TACOperator::Ge
+            | TACOperator::Le
+            | TACOperator::Eql
+            | TACOperator::Ne
+            | TACOperator::Or
+            | TACOperator::And => write!(f, "\t{} = {} {} {}", res, arg1, op, arg2),
+            TACOperator::Call(n) => match res {
+                TACOperand::Null => write!(f, "\t{} {} {}", op, arg1, n),
+                _ => write!(f, "\t{} = {} {} {}", res, op, arg1, n),
+            },
+            TACOperator::Assign => write!(f, "\t{} {} {}", res, op, arg1),
+            TACOperator::Ret(_) => match res {
+                TACOperand::Null => write!(f, "\t{}", op),
+                _ => write!(f, "\t{} {}", op, res),
+            },
+            TACOperator::Param(_) => write!(f, "\t{} {}", op, arg1),
+            TACOperator::Begin(_) => write!(f, "\t{}", op),
+            TACOperator::End(_) => write!(f, "\t{}", op),
+            TACOperator::Goto => write!(f, "\t{} {}", op, res),
+            TACOperator::If | TACOperator::Iff => {
+                write!(f, "\t{} {} {} {}", op, arg1, TACOperator::Goto, res)
+            }
+            TACOperator::Not => write!(f, "\t{} = {} {}", res, op, arg1),
+            TACOperator::Null => write!(f, "{}:", res),
+        }
     }
 }
 
-impl Clone for TACState {
-    fn clone(&self) -> TACState {
-        TACState(Rc::clone(&self.0))
+pub struct TACIr(VecDeque<TACInstruction>);
+
+impl TACIr {
+    pub fn new() -> Self {
+        TACIr(VecDeque::<TACInstruction>::new())
+    }
+
+    pub fn push(&mut self, tac: TACInstruction) {
+        self.0.push_back(tac);
+    }
+
+    pub fn pop(&mut self) -> Option<TACInstruction> {
+        self.0.pop_front()
+    }
+}
+
+impl Deref for TACIr {
+    type Target = VecDeque<TACInstruction>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for TACIr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl fmt::Display for TACIr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for tac in self.iter() {
+            writeln!(f, "{}", tac)?;
+        }
+        Ok(())
     }
 }

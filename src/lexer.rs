@@ -1,435 +1,241 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, ErrorKind, Read, Result};
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Array {
-    pub of: Box<Token>, //TODO: try to get rid of this
-    pub size: u32,
-    pub width: u32,
-}
+use super::tokens::{Tag, Token};
 
-impl Array {
-    pub fn new(size: u32, of: Token, tp_width: u32) -> Self {
-        Array {
-            size,
-            of: Box::new(of),
-            width: size * tp_width,
-        }
-    }
-
-    pub fn array_to_string(&self) -> String {
-        format!("[ {} ] {}", self.size, self.of.to_owned().value_to_string())
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token {
-    Num(u32),
-    Real(f64),
-    Id(String),
-    True(String),
-    False(String),
-    If(String),
-    Else(String),
-    While(String),
-    And(String),
-    Or(String),
-    Eql(String),
-    Ne(String),
-    Le(String),
-    Ge(String),
-    Lt(String),
-    Gt(String),
-    Asgn(String),
-    Not(String),
-    Add(String),
-    Sub(String),
-    Mul(String),
-    Div(String),
-    Lcb(String),
-    Rcb(String),
-    Lrb(String),
-    Rrb(String),
-    Lsb(String),
-    Rsb(String),
-    Scol(String),
-    Int(String),
-    Float(String),
-    Bool(String),
-    Arr(Array),
-    Def(String),
-    Return(String),
-    Void(String),
-}
-
-impl Token {
-    pub fn value_to_string(self) -> String {
-        match self {
-            Token::Num(i) => format!("{}", i),
-            Token::Real(i) => format!("{:?}", i),
-            Token::Id(s) => s,
-            Token::True(s) => s,
-            Token::False(s) => s,
-            Token::If(s) => s,
-            Token::Else(s) => s,
-            Token::While(s) => s,
-            Token::And(s) => s,
-            Token::Or(s) => s,
-            Token::Eql(s) => s,
-            Token::Ne(s) => s,
-            Token::Le(s) => s,
-            Token::Ge(s) => s,
-            Token::Lt(s) => s,
-            Token::Gt(s) => s,
-            Token::Asgn(s) => s,
-            Token::Not(s) => s,
-            Token::Add(s) => s,
-            Token::Sub(s) => s,
-            Token::Mul(s) => s,
-            Token::Div(s) => s,
-            Token::Lcb(s) => s,
-            Token::Rcb(s) => s,
-            Token::Lrb(s) => s,
-            Token::Rrb(s) => s,
-            Token::Lsb(s) => s,
-            Token::Rsb(s) => s,
-            Token::Scol(s) => s,
-            Token::Int(s) => s,
-            Token::Float(s) => s,
-            Token::Bool(s) => s,
-            Token::Arr(a) => a.array_to_string(),
-            Token::Def(s) => s,
-            Token::Return(s) => s,
-            Token::Void(s) => s,
-        }
-    }
-
-    pub fn get_width(&self) -> Result<u32, &'static str> {
-        match self {
-            Token::Int(_) => Ok(4),
-            Token::Float(_) => Ok(8),
-            Token::Bool(_) => Ok(1),
-            Token::Arr(a) => Ok(a.width),
-            _ => Err("type void does not have size"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct Lexer {
-    pub tokens: VecDeque<Token>,
+    pub line: u32,
+    peek: u8,
     words: HashMap<String, Token>,
-    current_line: u32,
-    pub lines: VecDeque<u32>, //safe line of token i to lines[i-1]
+    reader: Box<dyn BufRead>,
 }
 
 impl Lexer {
-    pub fn new() -> Lexer {
+    pub fn new(source: Box<dyn BufRead>) -> Lexer {
         Lexer {
-            tokens: VecDeque::new(),
+            line: 1,
+            peek: b' ',
             words: HashMap::from([
-                (String::from("true"), Token::True(String::from("true"))),
-                (String::from("false"), Token::False(String::from("false"))),
-                (String::from("if"), Token::If(String::from("if"))),
-                (String::from("else"), Token::Else(String::from("else"))),
-                (String::from("while"), Token::While(String::from("while"))),
-                (String::from("int"), Token::Int(String::from("int"))),
-                (String::from("float"), Token::Float(String::from("float"))),
-                (String::from("bool"), Token::Bool(String::from("bool"))),
-                (String::from("def"), Token::Def(String::from("def"))),
+                (String::from("true"), Token::ttrue()),
+                (String::from("false"), Token::tfalse()),
+                (String::from("int"), Token::int()),
+                (String::from("float"), Token::float()),
+                (String::from("char"), Token::char()),
+                (String::from("bool"), Token::bool()),
+                (String::from("void"), Token::void()),
+                (String::from("if"), Token::Word(String::from("if"), Tag::IF)),
+                (
+                    String::from("else"),
+                    Token::Word(String::from("else"), Tag::ELSE),
+                ),
+                (
+                    String::from("while"),
+                    Token::Word(String::from("while"), Tag::WHILE),
+                ),
+                (String::from("do"), Token::Word(String::from("do"), Tag::DO)),
+                (
+                    String::from("define"),
+                    Token::Word(String::from("define"), Tag::DEFINE),
+                ),
+                (
+                    String::from("break"),
+                    Token::Word(String::from("break"), Tag::BREAK),
+                ),
                 (
                     String::from("return"),
-                    Token::Return(String::from("return")),
+                    Token::Word(String::from("return"), Tag::RETURN),
                 ),
-                (String::from("void"), Token::Void(String::from("void"))),
+                (String::from("eof"), Token::Eof),
             ]),
-            current_line: 1,
-            lines: VecDeque::new(),
+            reader: source,
         }
     }
-    pub fn lex(&mut self, input: &str) {
-        let mut it = input.chars().peekable();
 
-        while let Some(&c) = it.peek() {
-            match c {
-                ' ' | '\t' | ',' => {
-                    it.next();
-                }
-                '\n' => {
-                    self.current_line += 1;
-                    it.next();
-                }
-                '&' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('&') = ch {
-                        self.tokens.push_back(Token::And(String::from("&&")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Id(String::from("&")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '|' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('|') = ch {
-                        self.tokens.push_back(Token::Or(String::from("||")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Id(String::from("|")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '=' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('=') = ch {
-                        self.tokens.push_back(Token::Eql(String::from("==")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Asgn(String::from("=")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '!' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('=') = ch {
-                        self.tokens.push_back(Token::Ne(String::from("!=")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Not(String::from("!")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '<' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('=') = ch {
-                        self.tokens.push_back(Token::Le(String::from("<=")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Lt(String::from("<")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '>' => {
-                    it.next();
-                    let ch = it.peek();
-                    if let Some('=') = ch {
-                        self.tokens.push_back(Token::Ge(String::from(">=")));
-                        it.next();
-                    } else {
-                        self.tokens.push_back(Token::Gt(String::from(">")));
-                    };
-                    self.lines.push_back(self.current_line);
-                }
-                '+' => {
-                    self.tokens.push_back(Token::Add(String::from("+")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '-' => {
-                    self.tokens.push_back(Token::Sub(String::from("-")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '*' => {
-                    self.tokens.push_back(Token::Mul(String::from("*")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '/' => {
-                    self.tokens.push_back(Token::Div(String::from("/")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '{' => {
-                    self.tokens.push_back(Token::Lcb(String::from("{")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '}' => {
-                    self.tokens.push_back(Token::Rcb(String::from("}")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '(' => {
-                    self.tokens.push_back(Token::Lrb(String::from("(")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                ')' => {
-                    self.tokens.push_back(Token::Rrb(String::from(")")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '[' => {
-                    self.tokens.push_back(Token::Lsb(String::from("[")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                ']' => {
-                    self.tokens.push_back(Token::Rsb(String::from("]")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                ';' => {
-                    self.tokens.push_back(Token::Scol(String::from(";")));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
-                '0'..='9' => {
-                    let mut n = c
-                        .to_string()
-                        .parse::<f64>()
-                        .expect("Character not a digit.");
+    fn read_ch(&mut self, c: u8) -> Result<bool> {
+        self.read()?;
+        if self.peek != c {
+            return Ok(false);
+        }
+        self.peek = b' ';
+        Ok(true)
+    }
 
-                    it.next();
-                    let mut digitch = it.peek();
-                    let mut is_real = false;
-                    while let Some(&i) = digitch {
-                        if !i.is_ascii_digit() {
-                            if i == '.' {
-                                is_real = true;
-                                let mut d = 10.0;
-                                it.next();
-                                digitch = it.peek();
-
-                                while let Some(&j) = digitch {
-                                    if !j.is_ascii_digit() {
-                                        digitch = None;
-                                    } else {
-                                        let f = j
-                                            .to_string()
-                                            .parse::<f64>()
-                                            .expect("Character not a digit.");
-                                        n += f / d;
-                                        d *= 10.0;
-                                        it.next();
-                                        digitch = it.peek();
-                                    }
-                                }
-                            } else {
-                                digitch = None;
-                            }
-                        } else {
-                            let digit = i
-                                .to_string()
-                                .parse::<f64>()
-                                .expect("Character not a digit.");
-                            n = n * 10.0 + digit;
-                            it.next();
-                            digitch = it.peek();
-                        }
-                    }
-                    if is_real {
-                        self.tokens.push_back(Token::Real(n));
-                    } else {
-                        let i = n as u32;
-                        self.tokens.push_back(Token::Num(i));
-                    }
-                    self.lines.push_back(self.current_line);
-                }
-                'A'..='Z' | 'a'..='z' => {
-                    let mut s = String::new();
-                    s.push(c);
-
-                    it.next();
-                    let mut ch = it.peek();
-                    while let Some(&i) = ch {
-                        if !i.is_ascii_digit() && !i.is_alphabetic() {
-                            ch = None;
-                        } else {
-                            s.push(i);
-                            it.next();
-                            ch = it.peek();
-                        }
-                    }
-                    match self.words.get(&s) {
-                        Some(t) => {
-                            self.tokens.push_back(Token::clone(t));
-                            self.lines.push_back(self.current_line);
-                        }
-                        None => {
-                            self.tokens.push_back(Token::Id(s.clone()));
-                            self.words.insert(s.clone(), Token::Id(s));
-                            self.lines.push_back(self.current_line);
-                        }
-                    }
-                }
-                _ => {
-                    self.tokens.push_back(Token::Id(String::from(c)));
-                    self.lines.push_back(self.current_line);
-                    it.next();
-                }
+    fn read(&mut self) -> Result<()> {
+        let mut buf = [0; 1];
+        if let Err(err) = self.reader.read_exact(&mut buf) {
+            if let ErrorKind::UnexpectedEof = err.kind() {
+                self.peek = b'\0';
+                return Ok(());
+            } else {
+                return Err(err);
             }
         }
-    }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn correct_amount_of_tokens() {
-        let input = String::from("1 _ != && =ok 3.4 1.0=_");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        assert_eq!(10, lexer.tokens.len())
+        self.peek = buf[0];
+        Ok(())
     }
 
-    #[test]
-    fn correct_token_line_count() {
-        let input = String::from("1 _ != && =ok 3.4 1.0=_");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        assert_eq!(10, lexer.lines.len())
-    }
+    pub fn scan(&mut self) -> Result<Token> {
+        if self.peek == b'\0' {
+            return Ok(Token::Eof);
+        }
 
-    #[test]
-    fn correct_token_types() {
-        let input = String::from("1 _ while { != && =ok 3.4 1.0=_ true false if else true1");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        let output = format!("{:?}", lexer.tokens);
-        assert_eq!(
-            r#"[Num(1), Id("_"), While("while"), Lcb("{"), Ne("!="), And("&&"), Asgn("="), Id("ok"), Real(3.4), Real(1.0), Asgn("="), Id("_"), True("true"), False("false"), If("if"), Else("else"), Id("true1")]"#,
-            output
-        )
-    }
+        loop {
+            if self.peek == b' ' || self.peek == b'\t' || self.peek == b'\r' {
+                self.read()?;
+                continue;
+            }
+            if self.peek == b'\n' {
+                self.line += 1;
+                self.read()?;
+                continue;
+            }
+            break;
+        }
 
-    #[test]
-    fn correct_bracket_handling() {
-        let input = String::from("while {([*/;])}");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        let output = format!("{:?}", lexer.tokens);
-        assert_eq!(
-            r#"[While("while"), Lcb("{"), Lrb("("), Lsb("["), Mul("*"), Div("/"), Scol(";"), Rsb("]"), Rrb(")"), Rcb("}")]"#,
-            output
-        )
-    }
+        match self.peek {
+            b'&' => {
+                return match self.read_ch(b'&') {
+                    Ok(true) => Ok(Token::and()),
+                    Ok(false) => Ok(Token::Token(b'&')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'&')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'|' => {
+                return match self.read_ch(b'|') {
+                    Ok(true) => Ok(Token::or()),
+                    Ok(false) => Ok(Token::Token(b'|')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'&')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'=' => {
+                return match self.read_ch(b'=') {
+                    Ok(true) => Ok(Token::eq()),
+                    Ok(false) => Ok(Token::Token(b'=')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'=')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'!' => {
+                return match self.read_ch(b'=') {
+                    Ok(true) => Ok(Token::ne()),
+                    Ok(false) => Ok(Token::Token(b'!')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'!')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'<' => {
+                return match self.read_ch(b'=') {
+                    Ok(true) => Ok(Token::le()),
+                    Ok(false) => Ok(Token::Token(b'<')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'<')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'>' => {
+                return match self.read_ch(b'=') {
+                    Ok(true) => Ok(Token::ge()),
+                    Ok(false) => Ok(Token::Token(b'>')),
+                    Err(err) => match err.kind() {
+                        ErrorKind::UnexpectedEof => Ok(Token::Token(b'>')),
+                        _ => Err(err),
+                    },
+                }
+            }
+            b'\0' => {
+                return Ok(Token::Eof);
+            }
+            _ => (),
+        }
 
-    #[test]
-    fn correct_type_handling() {
-        let input = String::from("1.0 1 true");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        let output = format!("{:?}", lexer.tokens);
-        assert_eq!(r#"[Real(1.0), Num(1), True("true")]"#, output)
-    }
+        if self.peek.is_ascii_digit() {
+            let mut v: i64 = 0;
 
-    #[test]
-    fn correct_function_definition_handling() {
-        let input = String::from("def void f(int a, int b)\n {\nreturn;\n}");
-        let mut lexer = Lexer::new();
-        lexer.lex(&input);
-        let output = format!("{:?}", lexer.tokens);
-        assert_eq!(
-            r#"[Def("def"), Void("void"), Id("f"), Lrb("("), Int("int"), Id("a"), Int("int"), Id("b"), Rrb(")"), Lcb("{"), Return("return"), Scol(";"), Rcb("}")]"#,
-            output
-        )
+            loop {
+                v = 10 * v + ((self.peek - b'0') as i64);
+
+                if let Err(err) = self.read() {
+                    if let ErrorKind::UnexpectedEof = err.kind() {
+                        break;
+                    } else {
+                        return Err(err);
+                    }
+                }
+
+                if !self.peek.is_ascii_digit() {
+                    break;
+                }
+            }
+
+            if self.peek != b'.' {
+                return Ok(Token::Num(v));
+            }
+
+            let mut x: f64 = v as f64;
+            let mut d: f64 = 10.0;
+
+            loop {
+                if let Err(err) = self.read() {
+                    if let ErrorKind::UnexpectedEof = err.kind() {
+                        break;
+                    } else {
+                        return Err(err);
+                    }
+                }
+
+                if !self.peek.is_ascii_digit() {
+                    break;
+                }
+
+                x += (self.peek - b'0') as f64 / d;
+
+                x = (x * d).round() / d;
+
+                d *= 10.0;
+            }
+
+            return Ok(Token::Real(x));
+        }
+
+        if self.peek.is_ascii_alphabetic() {
+            let mut b = String::new();
+
+            loop {
+                b.push(self.peek as char);
+                if let Err(err) = self.read() {
+                    if let ErrorKind::UnexpectedEof = err.kind() {
+                        break;
+                    } else {
+                        return Err(err);
+                    }
+                }
+
+                if !self.peek.is_ascii_alphanumeric() {
+                    break;
+                }
+            }
+
+            if let Some(token) = self.words.get(&b) {
+                return Ok(token.to_owned());
+            } else {
+                return Ok(Token::Word(b, Tag::ID));
+            }
+        }
+
+        let token = Token::Token(self.peek);
+        self.peek = b' ';
+        Ok(token)
     }
 }
