@@ -886,19 +886,19 @@ impl CodeGenerator {
 
                     if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_right).as_str(),
                         );
                     }
 
                     if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
                         );
                     }
 
@@ -927,19 +927,19 @@ impl CodeGenerator {
 
                     if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_right).as_str(),
                         );
                     }
 
                     if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
                         );
                     }
 
@@ -968,19 +968,19 @@ impl CodeGenerator {
 
                     if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_right).as_str(),
                         );
                     }
 
                     if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
                         );
                     }
 
@@ -1009,19 +1009,19 @@ impl CodeGenerator {
 
                     if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_right).as_str(),
                         );
                     }
 
                     if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
                         );
                     }
 
@@ -1050,19 +1050,19 @@ impl CodeGenerator {
 
                     if &cmp_tp == &Type::float() && arg1_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg1_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_left).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg1_code, scratch_right).as_str(),
                         );
                     }
 
                     if &cmp_tp == &Type::float() && arg2_tp != &cmp_tp {
                         b.push_str(format!("\tmovq {}, %rax\n", arg2_code).as_str());
-                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_right).as_str());
+                        b.push_str(format!("\tcvtsi2sdq %rax, {}\n", scratch_left).as_str());
                     } else {
                         b.push_str(
-                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_right).as_str(),
+                            format!("\t{} {}, {}\n", mov_code, arg2_code, scratch_left).as_str(),
                         );
                     }
 
