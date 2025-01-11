@@ -17,8 +17,7 @@ define int fib(int i) {
 define int main() {
     int[10] n; int i;
     i = 0;
-    while (true) {
-        if (i == 10) break;
+    while (i < 10) {
         n[i] = fib(i);
         i = i + 1;
     }
@@ -207,7 +206,9 @@ Grammar of the language:
 program     ->      functions
 functions   ->      functions function | ε
 function    ->      define type id ( params) block
-block       ->      { stmts }
+block       ->      { decls stmts }
+decls       ->      decls decl | ε
+decl        ->      type id;
 stmts       ->      stmts stmt | ε
 stmt        ->      type id = bool;
             |       type id [ num ];
