@@ -99,7 +99,8 @@ cargo test
 ## Grammar
 Grammar of the language:
 ```
-program     ->      block
+program     ->      program function | ε
+function    ->      define type id ( params) block
 block       ->      { stmts }
 stmts       ->      stmts stmt | ε
 stmt        ->      type id = bool;
@@ -108,7 +109,6 @@ stmt        ->      type id = bool;
             |       if ( bool ) stmt
             |       if ( bool ) stmt else stmt
             |       while ( bool ) stmt
-            |       def type id ( params ) stmt
             |       return expr;
             |       break;
             |       block
