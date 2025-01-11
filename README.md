@@ -37,8 +37,8 @@ fib:
 	movq %rsp, %rbp
 	subq $64, %rsp
 L1:
-	movq 16(%rbp), %rcx
-	movq $0, %rdx
+	movq 16(%rbp), %rdx
+	movq $0, %rcx
 	cmpq %rcx, %rdx
 	sete %al
 	movzx %al, %rcx
@@ -51,8 +51,8 @@ L4:
 	movq $1, %rax
 	jmp L2
 L3:
-	movq 16(%rbp), %rcx
-	movq $1, %rdx
+	movq 16(%rbp), %rdx
+	movq $1, %rcx
 	cmpq %rcx, %rdx
 	sete %al
 	movzx %al, %rcx
@@ -103,23 +103,17 @@ L7:
 	movq $0, %rcx
 	movq %rcx, -88(%rbp)
 L9:
-	movq $1, %rcx
-	test %rcx, %rcx
-	je L10
-L11:
-	movq -88(%rbp), %rcx
-	movq $10, %rdx
+	movq -88(%rbp), %rdx
+	movq $10, %rcx
 	cmpq %rcx, %rdx
-	sete %al
+	setl %al
 	movzx %al, %rcx
 	movq %rcx, -96(%rbp)
 	movq -96(%rbp), %r12
 	movq %r12, %rcx
 	test %rcx, %rcx
-	je L12
-L13:
-	jmp L10
-L12:
+	je L10
+L11:
 	movq -88(%rbp), %rcx
 	movq $8, %rdx
 	imulq %rcx, %rdx
@@ -132,7 +126,7 @@ L12:
 	movq -104(%rbp), %r11
 	movq %r12, %rcx
 	movq %rcx, -80(%rbp, %r11)
-L14:
+L12:
 	movq -88(%rbp), %rcx
 	movq $1, %rdx
 	addq %rdx, %rcx
@@ -145,6 +139,62 @@ L8:
 	addq $112, %rsp
 	popq %rbp
 	ret
+```
+Print three-address intermediate code with
+```
+cargo run --release -- --ir fib.num
+```
+Output:
+```
+================Start of TAC IR================
+fib:
+	begin 0
+L1:
+	t1 = i == 0
+	iffalse t1 goto L3
+L4:
+	ret 1
+	goto L2
+L3:
+	t2 = i == 1
+	iffalse t2 goto L5
+L6:
+	ret 1
+	goto L2
+L5:
+	t3 = i - 1
+	param t3
+	t4 = call fib 1
+	t5 = i - 2
+	param t5
+	t6 = call fib 1
+	t7 = t4 + t6
+	ret t7
+	goto L2
+L2:
+	end
+main:
+	begin 88
+L7:
+	i = 0
+L9:
+	t8 = i < 10
+	iffalse t8 goto L10
+L11:
+	t9 = i * 8
+	param i
+	t10 = call fib 1
+	n [t9] = t10
+L12:
+	i = i + 1
+	goto L9
+L10:
+	ret 0
+	goto L8
+L8:
+	end
+
+================End of TAC IR================
 ```
 ## Run tests
 Run tests by running the following command:
