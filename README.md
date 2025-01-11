@@ -1,5 +1,5 @@
 # numera
-Compiler project inspired by the dragon book :dragon:. Contains only the compiler frontend at the moment.
+Compiler project inspired by the dragon book :dragon:. Contains the compiler frontend and a very experimental `x86_64` backend at the moment.
 
 ![ci](https://github.com/dannasman/numera/actions/workflows/rust.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
