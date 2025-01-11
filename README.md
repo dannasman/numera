@@ -99,7 +99,8 @@ cargo test
 ## Grammar
 Grammar of the language:
 ```
-program     ->      program function | ε
+program     ->      functions
+functions   ->      functions function | ε
 function    ->      define type id ( params) block
 block       ->      { stmts }
 stmts       ->      stmts stmt | ε
