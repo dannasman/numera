@@ -6,7 +6,7 @@ Compiler project inspired by the dragon book :dragon:. Contains the compiler fro
 
 [![Contributors](https://img.shields.io/github/contributors/dannasman/numera)](https://github.com/dannasman/numera/graphs/contributors) :joy:
 ## Example
-Example code snippet `foo.num` in root directory:
+Example code snippet `fib.num` in root directory:
 ```
 define int fib(int i) {
     if (i == 0) return 1;
