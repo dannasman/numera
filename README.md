@@ -205,7 +205,7 @@ Grammar of the language:
 ```
 program     ->      functions
 functions   ->      functions function | ε
-function    ->      define type id ( params) block
+function    ->      define type id ( params ) block
 block       ->      { decls stmts }
 decls       ->      decls decl | ε
 decl        ->      type id;
