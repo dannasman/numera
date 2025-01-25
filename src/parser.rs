@@ -154,7 +154,7 @@ impl Parser {
             self.match_token(b'(')?;
             let mut params = Vec::<ExprNode>::new();
             let mut param_tps = Vec::<Type>::new();
-            let mut param_offset = -16;
+            let mut param_offset = -16; // TODO: x86_64 stack alignment, make more general
             while self.look.match_tag(Tag::BASIC) {
                 let tp = self.tp()?;
                 param_tps.push(tp.to_owned());
@@ -163,7 +163,7 @@ impl Parser {
                 let id = ExprNode::new_id(param_token, &tp, param_offset);
                 params.push(id.to_owned());
                 self.top.put(&id.to_string(), id)?;
-                param_offset -= 8;
+                param_offset -= tp.width() as i32;
                 if self.look.match_tag(b',') {
                     self.next()?;
                 }
